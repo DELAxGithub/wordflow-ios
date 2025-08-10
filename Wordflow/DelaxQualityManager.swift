@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Darwin.Mach
 
 // MARK: - DelaxQualityManager
 
@@ -48,9 +49,8 @@ class DelaxQualityManager {
         // Placeholder for SwiftUIQualityKit integration
         // This will be replaced with actual DELAX package imports
         
-        // Simulate DELAX system initialization
-        performanceMetrics.memoryUsage = ProcessInfo.processInfo.physicalMemory > 0 ? 
-            Double(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024 * 1024 * 16) : 0.1
+        // Initialize DELAX system
+        performanceMetrics.memoryUsage = 0.1
         
         // Setup performance monitoring
         startPerformanceMonitoring()
@@ -190,17 +190,28 @@ class DelaxQualityManager {
     
     private func updateRealTimeMetrics() {
         // Update real-time performance metrics
-        let task = Process()
-        task.launchPath = "/usr/bin/top"
-        task.arguments = ["-l", "1", "-s", "0", "-stats", "pid,cpu,mem"]
-        
-        // Simplified metric updates
         performanceMetrics.lastUpdated = Date()
         
-        // Simulate realistic metrics
-        performanceMetrics.memoryUsage = Double.random(in: 0.1...0.6)
-        performanceMetrics.cpuUsage = Double.random(in: 0.05...0.3)
-        performanceMetrics.responseTime = Double.random(in: 50...200)
+        // Basic memory usage from system
+        var memInfo = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
+        
+        let result = withUnsafeMutablePointer(to: &memInfo) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        
+        if result == KERN_SUCCESS {
+            let usedMemory = Double(memInfo.resident_size) / (1024 * 1024 * 1024) // GB
+            performanceMetrics.memoryUsage = min(1.0, usedMemory / 4.0) // Assume 4GB baseline
+        } else {
+            performanceMetrics.memoryUsage = 0.1 // Fallback
+        }
+        
+        // Simplified CPU and response time metrics
+        performanceMetrics.cpuUsage = 0.1 // Placeholder for CPU usage
+        performanceMetrics.responseTime = 50.0 // Placeholder for response time
     }
 }
 

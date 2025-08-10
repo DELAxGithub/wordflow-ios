@@ -5,7 +5,6 @@
 
 import Foundation
 import Observation
-import QuartzCore
 
 // MARK: - Timer Mode (Phase A)
 enum TimerMode: Codable, Identifiable, CaseIterable, Hashable {
