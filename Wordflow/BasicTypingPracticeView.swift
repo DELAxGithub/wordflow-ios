@@ -25,6 +25,8 @@ struct BasicTypingPracticeView: View {
     @State private var userInput = ""
     @State private var showingSampleTasks = false
     @State private var showingExport = false
+    @State private var showingCompletionModal = false
+    @State private var completionResult: TypingResult?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -53,6 +55,27 @@ struct BasicTypingPracticeView: View {
         .onAppear {
             setupRepositories()
             loadSampleTasksIfNeeded()
+            setupTestManager()
+        }
+        .sheet(isPresented: $showingCompletionModal) {
+            if let result = completionResult {
+                TestCompletionView(
+                    result: result,
+                    timerMode: testManager.timerMode,
+                    onRetry: {
+                        showingCompletionModal = false
+                        retryTest()
+                    },
+                    onNewTask: {
+                        showingCompletionModal = false
+                        resetTest()
+                    },
+                    onClose: {
+                        showingCompletionModal = false
+                        completionResult = nil
+                    }
+                )
+            }
         }
     }
     
@@ -244,7 +267,7 @@ struct BasicTypingPracticeView: View {
     
     private var controlStatisticsPanel: some View {
         HStack {
-            // Control Buttons
+            // Control Buttons & Timer Mode
             HStack(spacing: 12) {
                 Button("Start", systemImage: "play.fill") {
                     startTest()
@@ -261,6 +284,28 @@ struct BasicTypingPracticeView: View {
                     stopTest()
                 }
                 .disabled(!testManager.isActive)
+                
+                Divider()
+                    .frame(height: 20)
+                
+                // Timer Mode Selector
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Duration")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Picker("Timer Mode", selection: Binding(
+                        get: { testManager.timerMode },
+                        set: { testManager.setTimerMode($0) }
+                    )) {
+                        ForEach(TimerMode.allCases) { mode in
+                            Text(mode.shortName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(testManager.isActive)
+                    .frame(width: 120)
+                }
             }
             
             Spacer()
@@ -269,23 +314,27 @@ struct BasicTypingPracticeView: View {
             HStack(spacing: 20) {
                 StatisticView(
                     icon: "clock",
-                    title: "Time",
+                    title: "Time (\(testManager.timerMode.shortName))",
                     value: timeString,
-                    color: .blue
+                    color: timerColor
                 )
                 
-                StatisticView(
+                EnhancedStatisticView(
                     icon: "speedometer",
-                    title: "WPM",
-                    value: String(format: "%.0f", testManager.currentWPM),
-                    color: .green
+                    title: "Net WPM",
+                    value: String(format: "%.0f", testManager.netWPM),
+                    subtitle: testManager.isPersonalBest ? "🏆 NEW BEST!" : personalBestString,
+                    color: wpmColor,
+                    isHighlighted: testManager.isPersonalBest
                 )
                 
-                StatisticView(
+                EnhancedStatisticView(
                     icon: "target",
                     title: "Accuracy",
-                    value: String(format: "%.0f%%", testManager.accuracy),
-                    color: .orange
+                    value: String(format: "%.0f%%", testManager.characterAccuracy),
+                    subtitle: String(format: "Words: %.0f%%", testManager.wordAccuracy),
+                    color: accuracyColor,
+                    isHighlighted: testManager.characterAccuracy >= 98
                 )
                 
                 StatisticView(
@@ -294,6 +343,15 @@ struct BasicTypingPracticeView: View {
                     value: String(format: "%.0f%%", testManager.completionPercentage),
                     color: .purple
                 )
+                
+                if testManager.wpmVariation > 0 {
+                    StatisticView(
+                        icon: "waveform.path.ecg",
+                        title: "Consistency",
+                        value: String(format: "%.0f%%", 100 - testManager.wpmVariation),
+                        color: consistencyColor
+                    )
+                }
             }
         }
         .padding()
@@ -309,11 +367,70 @@ struct BasicTypingPracticeView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
     
+    private var timerColor: Color {
+        if !testManager.isActive {
+            return .blue
+        }
+        
+        let remainingRatio = testManager.remainingTime / testManager.timerMode.duration
+        
+        if remainingRatio > 0.5 {
+            return .blue
+        } else if remainingRatio > 0.25 {
+            return .orange
+        } else {
+            return .red
+        }
+    }
+    
+    private var wpmColor: Color {
+        let wpm = testManager.netWPM
+        if wpm >= 60 { return .green }
+        else if wpm >= 40 { return .blue }
+        else if wpm >= 25 { return .orange }
+        else { return .gray }
+    }
+    
+    private var accuracyColor: Color {
+        let accuracy = testManager.characterAccuracy
+        if accuracy >= 98 { return .green }
+        else if accuracy >= 95 { return .blue }
+        else if accuracy >= 90 { return .orange }
+        else { return .red }
+    }
+    
+    private var consistencyColor: Color {
+        let consistency = 100 - testManager.wpmVariation
+        if consistency >= 90 { return .green }
+        else if consistency >= 80 { return .blue }
+        else if consistency >= 70 { return .orange }
+        else { return .red }
+    }
+    
+    private var personalBestString: String {
+        if let best = testManager.getPersonalBest(for: testManager.timerMode) {
+            return String(format: "Best: %.0f", best.netWPM)
+        }
+        return "No record"
+    }
+    
     // MARK: - Methods
     
     private func setupRepositories() {
         taskRepository = IELTSTaskRepository(modelContext: modelContext)
         resultRepository = TypingResultRepository(modelContext: modelContext)
+    }
+    
+    private func setupTestManager() {
+        testManager.onTimeUp = {
+            Task { @MainActor in
+                if let result = self.testManager.endTest() {
+                    self.completionResult = result
+                    self.resultRepository?.saveResult(result)
+                    self.showingCompletionModal = true
+                }
+            }
+        }
     }
     
     private func loadSampleTasksIfNeeded() {
@@ -359,9 +476,17 @@ struct BasicTypingPracticeView: View {
         resetTest()
     }
     
+    private func retryTest() {
+        guard let task = selectedTask else { return }
+        userInput = ""
+        ttsManager.stop()
+        testManager.startTest(with: task)
+    }
+    
     private func resetTest() {
         userInput = ""
         ttsManager.stop()
+        completionResult = nil
     }
     
     private func playTTS() {
@@ -421,6 +546,43 @@ struct StatisticView: View {
                     .fontWeight(.medium)
             }
         }
+    }
+}
+
+struct EnhancedStatisticView: View {
+    let icon: String
+    let title: String
+    let value: String
+    let subtitle: String
+    let color: Color
+    let isHighlighted: Bool
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                    .font(.system(size: 16, weight: isHighlighted ? .bold : .regular))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(value)
+                        .font(.system(.caption, design: .monospaced))
+                        .fontWeight(isHighlighted ? .bold : .medium)
+                        .foregroundColor(isHighlighted ? color : .primary)
+                }
+            }
+            
+            Text(subtitle)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundColor(isHighlighted ? color : .secondary)
+                .fontWeight(isHighlighted ? .semibold : .regular)
+        }
+        .padding(.vertical, 2)
+        .background(isHighlighted ? color.opacity(0.1) : Color.clear)
+        .cornerRadius(4)
     }
 }
 
