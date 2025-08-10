@@ -18,10 +18,7 @@ struct WordflowApp: App {
             IELTSTask.self,
             TypingResult.self
         ])
-        let modelConfiguration = ModelConfiguration(
-            schema: schema, 
-            isStoredInMemoryOnly: true  // Phase A: Use in-memory during development
-        )
+        let modelConfiguration = ModelConfiguration(schema: schema)
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
