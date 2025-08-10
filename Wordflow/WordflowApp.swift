@@ -20,7 +20,7 @@ struct WordflowApp: App {
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema, 
-            isStoredInMemoryOnly: false
+            isStoredInMemoryOnly: true  // Phase A: Use in-memory during development
         )
 
         do {

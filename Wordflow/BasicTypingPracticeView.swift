@@ -26,7 +26,11 @@ struct BasicTypingPracticeView: View {
     @State private var showingSampleTasks = false
     @State private var showingExport = false
     @State private var showingCompletionModal = false
+    @State private var showingCustomTaskCreation = false
     @State private var completionResult: TypingResult?
+    
+    // Audio Settings
+    @State private var autoPlayAudio = true
     
     var body: some View {
         VStack(spacing: 0) {
@@ -77,6 +81,23 @@ struct BasicTypingPracticeView: View {
                 )
             }
         }
+        .sheet(isPresented: $showingCustomTaskCreation) {
+            CustomTaskCreationView(
+                onTaskCreated: { newTask in
+                    selectedTask = newTask
+                    resetTest()
+                },
+                taskRepository: taskRepository
+            )
+        }
+        .onKeyPress(.leftArrow, phases: .up) { keyPress in
+            // Check if Shift key is pressed for rewind shortcut
+            if keyPress.modifiers.contains(.shift) && ttsManager.isPlaying {
+                ttsManager.rewind(seconds: 3.0)
+                return .handled
+            }
+            return .ignored
+        }
     }
     
     // MARK: - Header View
@@ -106,6 +127,10 @@ struct BasicTypingPracticeView: View {
                     
                     Divider()
                     
+                    Button("Create Custom Task", systemImage: "plus") {
+                        showingCustomTaskCreation = true
+                    }
+                    
                     Button("Load Sample Tasks") {
                         showingSampleTasks = true
                     }
@@ -115,6 +140,15 @@ struct BasicTypingPracticeView: View {
                 Button("Export Results", systemImage: "square.and.arrow.up") {
                     exportResults()
                 }
+                .buttonStyle(.bordered)
+                
+                Toggle(isOn: $autoPlayAudio) {
+                    HStack(spacing: 4) {
+                        Image(systemName: autoPlayAudio ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                        Text("Auto Audio")
+                    }
+                }
+                .toggleStyle(.button)
                 .buttonStyle(.bordered)
             }
         }
@@ -288,9 +322,9 @@ struct BasicTypingPracticeView: View {
                 Divider()
                     .frame(height: 20)
                 
-                // Timer Mode Selector
+                // Phase A: Enhanced Timer Mode Selector
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Duration")
+                    Text("モード")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
@@ -302,9 +336,9 @@ struct BasicTypingPracticeView: View {
                             Text(mode.shortName).tag(mode)
                         }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
                     .disabled(testManager.isActive)
-                    .frame(width: 120)
+                    .frame(width: 140)
                 }
             }
             
@@ -319,6 +353,7 @@ struct BasicTypingPracticeView: View {
                     color: timerColor
                 )
                 
+                // Phase A: Enhanced Net WPM with Quality Score
                 EnhancedStatisticView(
                     icon: "speedometer",
                     title: "Net WPM",
@@ -326,6 +361,14 @@ struct BasicTypingPracticeView: View {
                     subtitle: testManager.isPersonalBest ? "🏆 NEW BEST!" : personalBestString,
                     color: wpmColor,
                     isHighlighted: testManager.isPersonalBest
+                )
+                
+                // Phase A: Quality Score display
+                StatisticView(
+                    icon: "star.fill",
+                    title: "Quality",
+                    value: String(format: "%.0f", testManager.qualityScore),
+                    color: qualityColor
                 )
                 
                 EnhancedStatisticView(
@@ -342,6 +385,14 @@ struct BasicTypingPracticeView: View {
                     title: "Progress",
                     value: String(format: "%.0f%%", testManager.completionPercentage),
                     color: .purple
+                )
+                
+                // Phase A: Gross WPM display (smaller)
+                StatisticView(
+                    icon: "keyboard",
+                    title: "Gross WPM",
+                    value: String(format: "%.0f", testManager.grossWPM),
+                    color: .gray
                 )
                 
                 if testManager.wpmVariation > 0 {
@@ -391,6 +442,15 @@ struct BasicTypingPracticeView: View {
         else { return .gray }
     }
     
+    // Phase A: Quality Score color coding
+    private var qualityColor: Color {
+        let quality = testManager.qualityScore
+        if quality >= 50 { return .green }
+        else if quality >= 30 { return .blue }
+        else if quality >= 15 { return .orange }
+        else { return .red }
+    }
+    
     private var accuracyColor: Color {
         let accuracy = testManager.characterAccuracy
         if accuracy >= 98 { return .green }
@@ -424,6 +484,9 @@ struct BasicTypingPracticeView: View {
     private func setupTestManager() {
         testManager.onTimeUp = {
             Task { @MainActor in
+                // Stop TTS when time is up
+                self.ttsManager.stop()
+                
                 if let result = self.testManager.endTest() {
                     self.completionResult = result
                     self.resultRepository?.saveResult(result)
@@ -467,6 +530,11 @@ struct BasicTypingPracticeView: View {
         guard let task = selectedTask else { return }
         testManager.startTest(with: task)
         userInput = ""
+        
+        // Auto-play audio if enabled
+        if autoPlayAudio {
+            playTTS()
+        }
     }
     
     private func stopTest() {
@@ -506,10 +574,11 @@ struct BasicTypingPracticeView: View {
             return AttributedString(userInput)
         }
         
+        // Phase A: Use basic error counter for highlighting (keeping existing pattern)
         let errorInfo = errorCounter.countBasicErrors(input: userInput, target: task.modelAnswer)
         var attributedString = AttributedString(userInput)
         
-        // Apply basic highlighting
+        // Apply basic highlighting based on error positions
         for (index, _) in userInput.enumerated() {
             if errorInfo.errorPositions.contains(index) {
                 let range = attributedString.index(attributedString.startIndex, offsetByCharacters: index)..<attributedString.index(attributedString.startIndex, offsetByCharacters: index + 1)
