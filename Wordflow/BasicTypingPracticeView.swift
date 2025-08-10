@@ -90,7 +90,7 @@ struct BasicTypingPracticeView: View {
                 taskRepository: taskRepository
             )
         }
-        .onKeyPress(.leftArrow, phases: .up) { keyPress in
+        .onKeyPress(.leftArrow, phases: [.down, .repeat]) { keyPress in
             // Check if Shift key is pressed for rewind shortcut
             if keyPress.modifiers.contains(.shift) && ttsManager.isPlaying {
                 ttsManager.rewind(seconds: 3.0)

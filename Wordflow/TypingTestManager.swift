@@ -96,22 +96,31 @@ class BasicScoringEngine {
     func calculateScore(userInput: String, targetText: String, elapsedTime: TimeInterval) -> ScoringResult {
         let elapsedMinutes = max(0.001, elapsedTime / 60.0)
         
-        // Simple word-based calculation
+        // Word-based calculations for WPM
         let userWords = tokenizeWords(userInput)
         let targetWords = tokenizeWords(targetText)
-        
         let grossWPM = Double(userWords.count) / elapsedMinutes
         
-        // Simple matching for MVP
-        let matchedWords = min(userWords.count, targetWords.count)
-        let netWPM = Double(matchedWords) / elapsedMinutes
-        let accuracy = targetWords.count > 0 ? Double(matchedWords) / Double(targetWords.count) * 100 : 100
-        let qualityScore = netWPM * accuracy / 100.0
+        // ✅ FIXED: Character-level accuracy calculation
+        let accuracy = calculateCharacterAccuracy(userInput: userInput, targetText: targetText)
+        
+        // Calculate correctly typed words based on character accuracy
+        let inputWordCount = userWords.count
+        let correctWordRatio = accuracy / 100.0
+        let estimatedCorrectWords = Double(inputWordCount) * correctWordRatio
+        let netWPM = estimatedCorrectWords / elapsedMinutes
+        
+        // ✅ FIXED: Separate completion percentage from accuracy
         let completionPercentage = targetWords.count > 0 ? 
             min(100.0, Double(userWords.count) / Double(targetWords.count) * 100.0) : 0.0
         
-        let totalErrors = max(0, userWords.count - matchedWords)
-        let errorRate = userWords.count > 0 ? Double(totalErrors) / Double(userWords.count) * 100 : 0
+        // Quality Score = Net WPM × Accuracy ÷ 100
+        let qualityScore = netWPM * accuracy / 100.0
+        
+        // Error calculations based on character accuracy
+        let totalInputChars = userInput.count
+        let incorrectChars = Int(Double(totalInputChars) * (100.0 - accuracy) / 100.0)
+        let errorRate = totalInputChars > 0 ? Double(incorrectChars) / Double(totalInputChars) * 100 : 0
         
         return ScoringResult(
             grossWPM: grossWPM,
@@ -119,12 +128,116 @@ class BasicScoringEngine {
             accuracy: accuracy,
             qualityScore: qualityScore,
             errorBreakdown: [:],
-            matchedWords: matchedWords,
+            matchedWords: Int(estimatedCorrectWords),
             totalWords: targetWords.count,
-            totalErrors: totalErrors,
+            totalErrors: incorrectChars,
             errorRate: errorRate,
             completionPercentage: completionPercentage
         )
+    }
+    
+    // ✅ NEW: Proper character-level accuracy calculation
+    private func calculateCharacterAccuracy(userInput: String, targetText: String) -> Double {
+        // Handle empty input
+        guard !userInput.isEmpty else { return 100.0 }
+        
+        // Normalize strings (trim whitespace, handle newlines consistently)
+        let normalizedInput = normalizeText(userInput)
+        let normalizedTarget = normalizeText(targetText)
+        
+        // Compare only the typed portion
+        let comparisonLength = min(normalizedInput.count, normalizedTarget.count)
+        guard comparisonLength > 0 else { return 100.0 }
+        
+        let inputSubstring = String(normalizedInput.prefix(comparisonLength))
+        let targetSubstring = String(normalizedTarget.prefix(comparisonLength))
+        
+        // Character-by-character comparison
+        var correctChars = 0
+        for (inputChar, targetChar) in zip(inputSubstring, targetSubstring) {
+            if inputChar == targetChar {
+                correctChars += 1
+            }
+        }
+        
+        let accuracy = Double(correctChars) / Double(comparisonLength) * 100.0
+        
+        // 🔍 ENHANCED DEBUG: Detailed character-level comparison
+        #if DEBUG
+        print("🎯 Accuracy Debug (Enhanced):")
+        print("   Raw Input length: \(userInput.count), Raw Target length: \(targetText.count)")
+        print("   Normalized Input length: \(normalizedInput.count), Normalized Target length: \(normalizedTarget.count)")
+        print("   Comparison length: \(comparisonLength)")
+        print("   Correct chars: \(correctChars)/\(comparisonLength)")
+        print("   Accuracy: \(String(format: "%.1f", accuracy))%")
+        
+        // Show first 20 characters with Unicode values
+        print("   First 20 chars comparison:")
+        for i in 0..<min(20, comparisonLength) {
+            let inputChar = inputSubstring[inputSubstring.index(inputSubstring.startIndex, offsetBy: i)]
+            let targetChar = targetSubstring[targetSubstring.index(targetSubstring.startIndex, offsetBy: i)]
+            let match = inputChar == targetChar ? "✓" : "✗"
+            let inputUnicode = inputChar.unicodeScalars.first?.value ?? 0
+            let targetUnicode = targetChar.unicodeScalars.first?.value ?? 0
+            print("   [\(i)] \(match) '\(inputChar)'(U+\(String(inputUnicode, radix: 16).uppercased())) vs '\(targetChar)'(U+\(String(targetUnicode, radix: 16).uppercased()))")
+        }
+        
+        // Show summary of error types
+        var errorTypes: [String: Int] = [:]
+        for (inputChar, targetChar) in zip(inputSubstring, targetSubstring) {
+            if inputChar != targetChar {
+                let errorType = getErrorType(input: inputChar, target: targetChar)
+                errorTypes[errorType, default: 0] += 1
+            }
+        }
+        if !errorTypes.isEmpty {
+            print("   Error types: \(errorTypes)")
+        }
+        #endif
+        
+        return accuracy
+    }
+    
+    // Helper function to normalize text for comparison
+    private func normalizeText(_ text: String) -> String {
+        return text
+            // Line ending normalization
+            .replacingOccurrences(of: "\r\n", with: "\n")  // Windows line endings
+            .replacingOccurrences(of: "\r", with: "\n")    // Mac classic line endings
+            // Space normalization
+            .replacingOccurrences(of: "\t", with: " ")     // Tab to space
+            .replacingOccurrences(of: "\u{00A0}", with: " ") // Non-breaking space to space
+            .replacingOccurrences(of: "\u{3000}", with: " ") // Ideographic space to space
+            // Unicode normalization (decomposed → composed form)
+            .precomposedStringWithCanonicalMapping
+            // Remove control characters except newlines and spaces
+            .filter { char in
+                let unicodeScalar = char.unicodeScalars.first
+                let isControlChar = unicodeScalar?.properties.generalCategory == .control
+                return !isControlChar || char.isNewline || char.isWhitespace
+            }
+            // Trim only outer whitespace, preserve internal spacing
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    // Helper function to categorize error types for debugging
+    private func getErrorType(input: Character, target: Character) -> String {
+        let inputUnicode = input.unicodeScalars.first?.value ?? 0
+        let targetUnicode = target.unicodeScalars.first?.value ?? 0
+        
+        if input.isWhitespace && target.isWhitespace {
+            return "whitespace_mismatch"
+        } else if input.isWhitespace || target.isWhitespace {
+            return "whitespace_vs_char"
+        } else if input.isNewline || target.isNewline {
+            return "newline_mismatch"
+        } else if input.lowercased() == target.lowercased() {
+            return "case_difference"
+        } else if abs(Int(inputUnicode) - Int(targetUnicode)) < 10 {
+            return "similar_chars"
+        } else {
+            return "different_chars"
+        }
     }
     
     private func tokenizeWords(_ text: String) -> [String] {
@@ -346,7 +459,7 @@ final class TypingTestManager {
         }
         
         // Phase A: Use timer mode ID for key (to handle practice modes with different durations)
-        let modeKey = timerMode.id
+        let _ = timerMode.id // For future enhancement
         
         if let existingBest = personalBests[timerMode] {
             if currentNetWPM > existingBest.netWPM {
