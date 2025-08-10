@@ -15,7 +15,7 @@ final class BasicTTSManager: NSObject {
     // Basic state only
     private(set) var isPlaying: Bool = false
     private(set) var isPaused: Bool = false
-    var playbackSpeed: TTSSpeed = .slow
+    var playbackSpeed: TTSSpeed = .verySlow
     
     // Position tracking for rewind functionality
     private var currentText: String = ""
@@ -40,15 +40,48 @@ final class BasicTTSManager: NSObject {
         let textToPlay = startPosition < text.count ? String(text.dropFirst(startPosition)) : ""
         guard !textToPlay.isEmpty else { return }
         
-        let utterance = AVSpeechUtterance(string: textToPlay)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US") // US English fixed
+        // Process text to add natural pauses at punctuation
+        let processedText = addPunctuationPauses(textToPlay)
+        
+        let utterance = AVSpeechUtterance(string: processedText)
+        
+        // Use higher quality voice if available
+        if let voice = AVSpeechSynthesisVoice(identifier: "com.apple.voice.enhanced.en-US.Samantha") ?? 
+                      AVSpeechSynthesisVoice(language: "en-US") {
+            utterance.voice = voice
+        }
+        
+        // Apply enhanced speech settings
         utterance.rate = playbackSpeed.rate
+        utterance.pitchMultiplier = playbackSpeed.pitchMultiplier
+        utterance.volume = playbackSpeed.volume
+        utterance.preUtteranceDelay = 0.1  // Small delay before starting
         
         playbackStartTime = Date()
         totalPausedDuration = 0
         isPlaying = true
         isPaused = false
         synthesizer.speak(utterance)
+    }
+    
+    // Add natural pauses at punctuation marks
+    private func addPunctuationPauses(_ text: String) -> String {
+        var processedText = text
+        
+        // Add longer pauses after periods and exclamation/question marks
+        processedText = processedText.replacingOccurrences(of: ".", with: ". ")
+        processedText = processedText.replacingOccurrences(of: "!", with: "! ")
+        processedText = processedText.replacingOccurrences(of: "?", with: "? ")
+        
+        // Add medium pauses after commas and semicolons
+        processedText = processedText.replacingOccurrences(of: ",", with: ", ")
+        processedText = processedText.replacingOccurrences(of: ";", with: "; ")
+        processedText = processedText.replacingOccurrences(of: ":", with: ": ")
+        
+        // Clean up multiple spaces
+        processedText = processedText.replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+        
+        return processedText
     }
     
     func pause() {
@@ -135,9 +168,25 @@ enum TTSSpeed: String, CaseIterable {
     
     var rate: Float {
         switch self {
-        case .verySlow: return 0.125  // 実際の0.25倍速 (0.5 × 0.25)
-        case .slow: return 0.25       // 実際の0.5倍速 (0.5 × 0.5)
-        case .normal: return 0.375    // 実際の0.75倍速 (0.5 × 0.75)
+        case .verySlow: return 0.15   // 0.25倍速 - より遅く、明確に区別可能
+        case .slow: return 0.30       // 0.5倍速 - 中程度の速度
+        case .normal: return 0.45     // 0.75倍速 - やや速め（通常より少し遅い）
+        }
+    }
+    
+    var pitchMultiplier: Float {
+        switch self {
+        case .verySlow: return 0.9    // 少し低めの声でゆっくり
+        case .slow: return 1.0        // 標準的な音程
+        case .normal: return 1.1      // 少し高めで快活に
+        }
+    }
+    
+    var volume: Float {
+        switch self {
+        case .verySlow: return 0.9    // 少し控えめな音量
+        case .slow: return 1.0        // 標準音量
+        case .normal: return 1.0      // 標準音量
         }
     }
 }
