@@ -75,17 +75,19 @@ extension BasicTTSManager: AVSpeechSynthesizerDelegate {
 // MARK: - TTSSpeed Enumeration
 
 enum TTSSpeed: String, CaseIterable {
-    case slow = "0.75x"
-    case normal = "1.0x"
-    case fast = "1.25x"
+    case verySlow = "0.25x"
+    case slow = "0.5x"
+    case normal = "0.75x"
+    case fast = "1.0x"
     
     var displayName: String { rawValue }
     
     var rate: Float {
         switch self {
-        case .slow: return 0.4
-        case .normal: return 0.5
-        case .fast: return 0.6
+        case .verySlow: return 0.25
+        case .slow: return 0.5
+        case .normal: return 0.75
+        case .fast: return 1.0
         }
     }
 }
