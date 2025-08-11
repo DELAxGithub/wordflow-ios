@@ -32,6 +32,8 @@ struct BasicTypingPracticeView: View {
     // Audio Settings
     @State private var autoPlayAudio = true
     
+    @FocusState private var isViewFocused: Bool
+    
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -56,10 +58,12 @@ struct BasicTypingPracticeView: View {
             // Control & Statistics Panel (10%)
             controlStatisticsPanel
         }
+        .focused($isViewFocused)
         .onAppear {
             setupRepositories()
             loadSampleTasksIfNeeded()
             setupTestManager()
+            isViewFocused = true // フォーカスを設定
         }
         .sheet(isPresented: $showingCompletionModal) {
             if let result = completionResult {
@@ -101,6 +105,9 @@ struct BasicTypingPracticeView: View {
         .onKeyPress(.return, phases: [.down]) { keyPress in
             // Enter: Start/Pause/Resume test
             if keyPress.modifiers.contains(.command) {
+                // フォーカスを確保
+                isViewFocused = true
+                
                 if !testManager.isActive && selectedTask != nil {
                     startTest()
                 } else if testManager.isActive && !testManager.isPaused {
@@ -114,6 +121,7 @@ struct BasicTypingPracticeView: View {
         }
         .onKeyPress(.escape, phases: [.down]) { keyPress in
             // Escape: Stop test
+            isViewFocused = true // フォーカスを確保
             if testManager.isActive {
                 stopTest()
                 return .handled
@@ -122,6 +130,7 @@ struct BasicTypingPracticeView: View {
         }
         .onKeyPress(KeyEquivalent("r"), phases: [.down]) { keyPress in
             // R: Quick retry (when test is completed)
+            isViewFocused = true // フォーカスを確保
             if keyPress.modifiers.contains(.command) && !testManager.isActive && selectedTask != nil {
                 startTest()
                 return .handled
@@ -528,6 +537,7 @@ struct BasicTypingPracticeView: View {
     
     private func startTest() {
         guard let task = selectedTask else { return }
+        isViewFocused = true // フォーカスを確保
         testManager.startTest(with: task)
         userInput = ""
         
@@ -540,7 +550,10 @@ struct BasicTypingPracticeView: View {
     private func stopTest() {
         if let result = testManager.endTest() {
             resultRepository?.saveResult(result)
+            completionResult = result
+            showingCompletionModal = true
         }
+        isViewFocused = true // フォーカスを確保
         resetTest()
     }
     
