@@ -507,6 +507,9 @@ struct BasicTypingPracticeView: View {
                 // Stop TTS when time is up
                 self.ttsManager.stop()
                 
+                // 2秒間の余白を追加
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2秒
+                
                 if let result = self.testManager.endTest() {
                     self.completionResult = result
                     self.resultRepository?.saveResult(result)
