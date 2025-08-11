@@ -33,6 +33,7 @@ struct BasicTypingPracticeView: View {
     @State private var autoPlayAudio = true
     
     @FocusState private var isViewFocused: Bool
+    @FocusState private var isInputFocused: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -65,7 +66,15 @@ struct BasicTypingPracticeView: View {
             setupTestManager()
             isViewFocused = true // フォーカスを設定
         }
-        .sheet(isPresented: $showingCompletionModal) {
+        .sheet(isPresented: $showingCompletionModal, onDismiss: {
+            // シートが閉じられた時にフォーカスを戻す
+            DispatchQueue.main.async {
+                self.isViewFocused = true
+                if testManager.isActive {
+                    self.isInputFocused = true
+                }
+            }
+        }) {
             if let result = completionResult {
                 TestCompletionView(
                     result: result,
@@ -275,6 +284,7 @@ struct BasicTypingPracticeView: View {
         TextEditor(text: $userInput)
             .font(.body)
             .disabled(!testManager.isActive)
+            .focused($isInputFocused)
             .onChange(of: userInput) { _, newValue in
                 testManager.updateInput(newValue)
             }
@@ -296,6 +306,7 @@ struct BasicTypingPracticeView: View {
             TextEditor(text: $userInput)
                 .font(.body)
                 .background(Color.clear)
+                .focused($isInputFocused)
                 .onChange(of: userInput) { _, newValue in
                     testManager.updateInput(newValue)
                 }
@@ -541,6 +552,11 @@ struct BasicTypingPracticeView: View {
         testManager.startTest(with: task)
         userInput = ""
         
+        // インプットエリアにフォーカス
+        DispatchQueue.main.async {
+            self.isInputFocused = true
+        }
+        
         // Auto-play audio if enabled
         if autoPlayAudio {
             playTTS()
@@ -562,6 +578,11 @@ struct BasicTypingPracticeView: View {
         userInput = ""
         ttsManager.stop()
         testManager.startTest(with: task)
+        
+        // インプットエリアにフォーカス
+        DispatchQueue.main.async {
+            self.isInputFocused = true
+        }
         
         // Auto-play audio if enabled
         if autoPlayAudio {
