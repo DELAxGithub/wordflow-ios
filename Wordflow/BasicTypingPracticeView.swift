@@ -98,8 +98,8 @@ struct BasicTypingPracticeView: View {
             }
             return .ignored
         }
-        .onKeyPress(.space, phases: [.down]) { keyPress in
-            // Space: Start/Pause/Resume test
+        .onKeyPress(.return, phases: [.down]) { keyPress in
+            // Enter: Start/Pause/Resume test
             if keyPress.modifiers.contains(.command) {
                 if !testManager.isActive && selectedTask != nil {
                     startTest()
@@ -120,8 +120,8 @@ struct BasicTypingPracticeView: View {
             }
             return .ignored
         }
-        .onKeyPress(.return, phases: [.down]) { keyPress in
-            // Enter: Quick retry (when test is completed)
+        .onKeyPress(KeyEquivalent("r"), phases: [.down]) { keyPress in
+            // R: Quick retry (when test is completed)
             if keyPress.modifiers.contains(.command) && !testManager.isActive && selectedTask != nil {
                 startTest()
                 return .handled
@@ -303,13 +303,13 @@ struct BasicTypingPracticeView: View {
         HStack {
             // Control Buttons & Timer Mode
             HStack(spacing: 12) {
-                Button("Start (⌘Space)", systemImage: "play.fill") {
+                Button("Start (⌘Enter)", systemImage: "play.fill") {
                     startTest()
                 }
                 .disabled(selectedTask == nil || testManager.isActive)
                 .buttonStyle(.borderedProminent)
                 
-                Button("Pause (⌘Space)", systemImage: "pause.fill") {
+                Button("Pause (⌘Enter)", systemImage: "pause.fill") {
                     testManager.pauseTest()
                 }
                 .disabled(!testManager.isActive || testManager.isPaused)

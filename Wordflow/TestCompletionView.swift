@@ -123,7 +123,7 @@ struct TestCompletionView: View {
             
             // Action Buttons
             HStack(spacing: 12) {
-                Button("Try Again (Press Enter)", systemImage: "arrow.clockwise") {
+                Button("Try Again (⌘R)", systemImage: "arrow.clockwise") {
                     onRetry()
                 }
                 .buttonStyle(.borderedProminent)
@@ -154,11 +154,11 @@ struct TestCompletionView: View {
             }
         }
         .background(
-            // Hidden button to capture Enter key
+            // Hidden button to capture Cmd+R key
             Button("") {
                 onRetry()
             }
-            .keyboardShortcut(.return, modifiers: [])
+            .keyboardShortcut("r", modifiers: .command)
             .opacity(0)
         )
     }
