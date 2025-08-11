@@ -62,10 +62,11 @@ enum TimerMode: Codable, Identifiable, CaseIterable, Hashable {
     // CaseIterable対応（デフォルトの練習モードオプション）
     static var allCases: [TimerMode] {
         return [
-            .exam,
+            .practice(10),   // 10秒 - デフォルト
             .practice(30),   // 30秒
             .practice(60),   // 1分
             .practice(90),   // 1分30秒
+            .exam,           // 試験モード (2分)
             .practice(180),  // 3分
             .practice(300)   // 5分
         ]
@@ -252,9 +253,9 @@ final class TypingTestManager {
     // Test state
     private(set) var isActive: Bool = false
     private(set) var isPaused: Bool = false
-    private(set) var remainingTime: TimeInterval = 120 // Default 2 minutes
+    private(set) var remainingTime: TimeInterval = 10 // Default 10 seconds
     private(set) var elapsedTime: TimeInterval = 0
-    private(set) var timerMode: TimerMode = .exam // Phase A: Default to exam mode
+    private(set) var timerMode: TimerMode = .practice(10) // Default to 10 seconds
     
     // Phase A: Enhanced scoring system
     private let scoringEngine = BasicScoringEngine()
