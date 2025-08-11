@@ -2,7 +2,7 @@
 //  IELTSTask.swift
 //  Wordflow
 //
-//  IELTS Writing Practice App - Core Data Models
+//  Typing Practice App - Core Data Models
 //
 
 import Foundation

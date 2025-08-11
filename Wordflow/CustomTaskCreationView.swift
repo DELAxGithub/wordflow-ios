@@ -1,6 +1,6 @@
 //
 //  CustomTaskCreationView.swift
-//  Wordflow - IELTS Writing Practice App
+//  Wordflow - Typing Practice App
 //
 
 import SwiftUI
@@ -202,7 +202,7 @@ struct CustomTaskCreationView: View {
                             .frame(width: 80)
                         }
                         
-                        Text("Set your target IELTS band score for reference")
+                        Text("Set your target proficiency level for reference")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

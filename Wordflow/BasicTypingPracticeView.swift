@@ -1,6 +1,6 @@
 //
 //  BasicTypingPracticeView.swift
-//  Wordflow - IELTS Writing Practice App
+//  Wordflow - Typing Practice App
 //
 
 import SwiftUI
@@ -98,13 +98,43 @@ struct BasicTypingPracticeView: View {
             }
             return .ignored
         }
+        .onKeyPress(.space, phases: [.down]) { keyPress in
+            // Space: Start/Pause/Resume test
+            if keyPress.modifiers.contains(.command) {
+                if !testManager.isActive && selectedTask != nil {
+                    startTest()
+                } else if testManager.isActive && !testManager.isPaused {
+                    testManager.pauseTest()
+                } else if testManager.isPaused {
+                    testManager.resumeTest()
+                }
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.escape, phases: [.down]) { keyPress in
+            // Escape: Stop test
+            if testManager.isActive {
+                stopTest()
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.return, phases: [.down]) { keyPress in
+            // Enter: Quick retry (when test is completed)
+            if keyPress.modifiers.contains(.command) && !testManager.isActive && selectedTask != nil {
+                startTest()
+                return .handled
+            }
+            return .ignored
+        }
     }
     
     // MARK: - Header View
     
     private var headerView: some View {
         HStack {
-            Text("IELTS Typing Practice")
+            Text("タイピング練習")
                 .font(.title2)
                 .fontWeight(.semibold)
             
@@ -172,36 +202,6 @@ struct BasicTypingPracticeView: View {
                 }
                 
                 Spacer()
-                
-                // TTS Controls
-                if selectedTask != nil {
-                    HStack(spacing: 8) {
-                        Button("Play", systemImage: "play.fill") {
-                            playTTS()
-                        }
-                        .disabled(ttsManager.isPlaying)
-                        
-                        if ttsManager.isPlaying {
-                            Button("Pause", systemImage: "pause.fill") {
-                                ttsManager.pause()
-                            }
-                            .disabled(ttsManager.isPaused)
-                            
-                            Button("Stop", systemImage: "stop.fill") {
-                                ttsManager.stop()
-                            }
-                        }
-                        
-                        Menu(ttsManager.playbackSpeed.displayName) {
-                            ForEach(TTSSpeed.allCases, id: \.self) { speed in
-                                Button(speed.displayName) {
-                                    ttsManager.setSpeed(speed)
-                                }
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
             }
             
             // Target Text Display
@@ -303,18 +303,18 @@ struct BasicTypingPracticeView: View {
         HStack {
             // Control Buttons & Timer Mode
             HStack(spacing: 12) {
-                Button("Start", systemImage: "play.fill") {
+                Button("Start (⌘Space)", systemImage: "play.fill") {
                     startTest()
                 }
                 .disabled(selectedTask == nil || testManager.isActive)
                 .buttonStyle(.borderedProminent)
                 
-                Button("Pause", systemImage: "pause.fill") {
+                Button("Pause (⌘Space)", systemImage: "pause.fill") {
                     testManager.pauseTest()
                 }
                 .disabled(!testManager.isActive || testManager.isPaused)
                 
-                Button("Stop", systemImage: "stop.fill") {
+                Button("Stop (Esc)", systemImage: "stop.fill") {
                     stopTest()
                 }
                 .disabled(!testManager.isActive)

@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  Wordflow - IELTS Writing Practice App
+//  Wordflow - Typing Practice App
 //
 
 import SwiftUI

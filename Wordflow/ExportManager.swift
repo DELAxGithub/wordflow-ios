@@ -1,6 +1,6 @@
 //
 //  ExportManager.swift
-//  Wordflow - IELTS Writing Practice App
+//  Wordflow - Typing Practice App
 //
 
 import Foundation
@@ -68,7 +68,7 @@ final class ExportManager: ObservableObject {
         let task2Results = results.filter { $0.task?.taskType == .task2 }
         
         var report = """
-        # IELTS Typing Practice Summary Report
+        # Wordflow Typing Practice Summary Report
         
         ## Overall Statistics
         - Total Sessions: \(totalSessions)

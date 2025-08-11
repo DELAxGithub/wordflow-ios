@@ -1,6 +1,6 @@
 //
 //  BasicTTSManager.swift
-//  Wordflow - IELTS Writing Practice App
+//  Wordflow - Typing Practice App
 //
 
 import Foundation
@@ -160,17 +160,23 @@ extension BasicTTSManager: AVSpeechSynthesizerDelegate {
 // MARK: - TTSSpeed Enumeration
 
 enum TTSSpeed: String, CaseIterable {
-    case verySlow = "Very Slow (0.25x)"
-    case slow = "Slow (0.5x)"
-    case normal = "Normal (0.75x)"
+    case verySlow = "Very Slow"
+    case slow = "Slow"
+    case normal = "Normal"
     
-    var displayName: String { rawValue }
+    var displayName: String { 
+        switch self {
+        case .verySlow: return "Very Slow (0.15x)"
+        case .slow: return "Slow (0.30x)"
+        case .normal: return "Normal (0.45x)"
+        }
+    }
     
     var rate: Float {
         switch self {
-        case .verySlow: return 0.15   // 0.25倍速 - より遅く、明確に区別可能
-        case .slow: return 0.30       // 0.5倍速 - 中程度の速度
-        case .normal: return 0.45     // 0.75倍速 - やや速め（通常より少し遅い）
+        case .verySlow: return 0.15   // 0.15倍速 - より遅く、明確に区別可能
+        case .slow: return 0.30       // 0.30倍速 - 中程度の速度
+        case .normal: return 0.45     // 0.45倍速 - やや速め（通常より少し遅い）
         }
     }
     

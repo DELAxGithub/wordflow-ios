@@ -1,6 +1,6 @@
 //
 //  TestCompletionView.swift
-//  Wordflow - IELTS Writing Practice App
+//  Wordflow - Typing Practice App
 //
 
 import SwiftUI
@@ -123,7 +123,7 @@ struct TestCompletionView: View {
             
             // Action Buttons
             HStack(spacing: 12) {
-                Button("Try Again", systemImage: "arrow.clockwise") {
+                Button("Try Again (Press Enter)", systemImage: "arrow.clockwise") {
                     onRetry()
                 }
                 .buttonStyle(.borderedProminent)
@@ -147,6 +147,20 @@ struct TestCompletionView: View {
         .background(.regularMaterial)
         .cornerRadius(16)
         .shadow(radius: 20)
+        .onAppear {
+            // Set focus to enable keyboard input
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                // Focus is handled automatically
+            }
+        }
+        .background(
+            // Hidden button to capture Enter key
+            Button("") {
+                onRetry()
+            }
+            .keyboardShortcut(.return, modifiers: [])
+            .opacity(0)
+        )
     }
     
     // MARK: - Helper Functions
