@@ -549,6 +549,11 @@ struct BasicTypingPracticeView: View {
         userInput = ""
         ttsManager.stop()
         testManager.startTest(with: task)
+        
+        // Auto-play audio if enabled
+        if autoPlayAudio {
+            playTTS()
+        }
     }
     
     private func resetTest() {
