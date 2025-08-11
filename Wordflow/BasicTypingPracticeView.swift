@@ -32,6 +32,9 @@ struct BasicTypingPracticeView: View {
     // Audio Settings
     @State private var autoPlayAudio = true
     
+    // Debounce for retry operations
+    @State private var lastRetryTime: Date = Date.distantPast
+    
     @FocusState private var isViewFocused: Bool
     @FocusState private var isInputFocused: Bool
     
@@ -79,6 +82,7 @@ struct BasicTypingPracticeView: View {
                 TestCompletionView(
                     result: result,
                     timerMode: testManager.timerMode,
+                    resultRepository: resultRepository,
                     onRetry: {
                         showingCompletionModal = false
                         retryTest()
@@ -118,10 +122,13 @@ struct BasicTypingPracticeView: View {
                 isViewFocused = true
                 
                 if !testManager.isActive && selectedTask != nil {
+                    // テスト開始
                     startTest()
                 } else if testManager.isActive && !testManager.isPaused {
+                    // タイマー中：一時停止
                     testManager.pauseTest()
                 } else if testManager.isPaused {
+                    // 一時停止中：再開
                     testManager.resumeTest()
                 }
                 return .handled
@@ -138,11 +145,18 @@ struct BasicTypingPracticeView: View {
             return .ignored
         }
         .onKeyPress(KeyEquivalent("r"), phases: [.down]) { keyPress in
-            // R: Quick retry (when test is completed)
+            // R: Restart during active test or retry when test is completed
             isViewFocused = true // フォーカスを確保
-            if keyPress.modifiers.contains(.command) && !testManager.isActive && selectedTask != nil {
-                startTest()
-                return .handled
+            if keyPress.modifiers.contains(.command) && selectedTask != nil {
+                if testManager.isActive && !showingCompletionModal {
+                    // テスト中：リスタート
+                    restartTest()
+                    return .handled
+                } else if !testManager.isActive && !showingCompletionModal {
+                    // テスト完了後：再試行
+                    startTest()
+                    return .handled
+                }
             }
             return .ignored
         }
@@ -329,10 +343,19 @@ struct BasicTypingPracticeView: View {
                 .disabled(selectedTask == nil || testManager.isActive)
                 .buttonStyle(.borderedProminent)
                 
-                Button("Pause (⌘Enter)", systemImage: "pause.fill") {
-                    testManager.pauseTest()
+                Button(testManager.isPaused ? "Resume (⌘Enter)" : "Pause (⌘Enter)", systemImage: testManager.isPaused ? "play.fill" : "pause.fill") {
+                    if testManager.isPaused {
+                        testManager.resumeTest()
+                    } else {
+                        testManager.pauseTest()
+                    }
                 }
-                .disabled(!testManager.isActive || testManager.isPaused)
+                .disabled(!testManager.isActive)
+                
+                Button("Restart (⌘R)", systemImage: "arrow.clockwise") {
+                    restartTest()
+                }
+                .disabled(!testManager.isActive)
                 
                 Button("Stop (Esc)", systemImage: "stop.fill") {
                     stopTest()
@@ -510,6 +533,9 @@ struct BasicTypingPracticeView: View {
                 // 2秒間の余白を追加
                 try? await Task.sleep(nanoseconds: 2_000_000_000) // 2秒
                 
+                // 既に結果表示中の場合は何もしない（重複防止）
+                guard !self.showingCompletionModal else { return }
+                
                 if let result = self.testManager.endTest() {
                     self.completionResult = result
                     self.resultRepository?.saveResult(result)
@@ -567,23 +593,62 @@ struct BasicTypingPracticeView: View {
     }
     
     private func stopTest() {
+        guard testManager.isActive else { return }
+        
+        // TTS停止
+        ttsManager.stop()
+        
+        // 既に結果表示中の場合は何もしない（重複防止）
+        guard !showingCompletionModal else { return }
+        
         if let result = testManager.endTest() {
             resultRepository?.saveResult(result)
             completionResult = result
             showingCompletionModal = true
         }
+        
+        userInput = ""
         isViewFocused = true // フォーカスを確保
-        resetTest()
     }
     
     private func retryTest() {
         guard let task = selectedTask else { return }
+        
+        // デバウンス: 1秒以内の重複実行を防ぐ
+        let now = Date()
+        if now.timeIntervalSince(lastRetryTime) < 1.0 {
+            return
+        }
+        lastRetryTime = now
+        
         userInput = ""
         ttsManager.stop()
         testManager.startTest(with: task)
         
         // インプットエリアにフォーカス
         DispatchQueue.main.async {
+            self.isInputFocused = true
+        }
+        
+        // Auto-play audio if enabled
+        if autoPlayAudio {
+            playTTS()
+        }
+    }
+    
+    private func restartTest() {
+        guard let task = selectedTask else { return }
+        // 現在のテストを停止して新しいテストを開始
+        _ = testManager.endTest() // 結果は保存しない（警告回避のため破棄）
+        userInput = ""
+        ttsManager.stop()
+        testManager.startTest(with: task)
+        
+        // フォーカスを確実に設定（少し遅延を入れる）
+        DispatchQueue.main.async {
+            self.isViewFocused = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             self.isInputFocused = true
         }
         

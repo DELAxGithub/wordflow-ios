@@ -8,9 +8,14 @@ import SwiftUI
 struct TestCompletionView: View {
     let result: TypingResult
     let timerMode: TimerMode
+    let resultRepository: TypingResultRepository?
     let onRetry: () -> Void
     let onNewTask: () -> Void
     let onClose: () -> Void
+    
+    // 前回記録とベスト記録
+    @State private var previousResult: TypingResult?
+    @State private var bestResult: TypingResult?
     
     var body: some View {
         VStack(spacing: 24) {
@@ -69,6 +74,74 @@ struct TestCompletionView: View {
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
             .cornerRadius(12)
+            
+            // 前回記録とベスト記録セクション
+            if previousResult != nil || bestResult != nil {
+                VStack(spacing: 16) {
+                    Text("Today's Records")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    HStack(spacing: 20) {
+                        // 前回記録
+                        if let previous = previousResult {
+                            VStack(spacing: 8) {
+                                Text("Previous")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                HStack(spacing: 15) {
+                                    ComparisonMetricView(
+                                        title: "WPM",
+                                        current: result.netWPM,
+                                        previous: previous.netWPM,
+                                        icon: "speedometer"
+                                    )
+                                    
+                                    ComparisonMetricView(
+                                        title: "Accuracy",
+                                        current: result.accuracy,
+                                        previous: previous.accuracy,
+                                        icon: "target",
+                                        isPercentage: true
+                                    )
+                                }
+                            }
+                        }
+                        
+                        // ベスト記録
+                        if let best = bestResult {
+                            VStack(spacing: 8) {
+                                Text("Today's Best")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                HStack(spacing: 15) {
+                                    ComparisonMetricView(
+                                        title: "WPM",
+                                        current: result.netWPM,
+                                        previous: best.netWPM,
+                                        icon: "crown.fill",
+                                        isBest: true
+                                    )
+                                    
+                                    ComparisonMetricView(
+                                        title: "Accuracy",
+                                        current: result.accuracy,
+                                        previous: best.accuracy,
+                                        icon: "star.fill",
+                                        isPercentage: true,
+                                        isBest: true
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding()
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(12)
+            }
             
             // Detailed Results Section
             VStack(spacing: 12) {
@@ -152,6 +225,9 @@ struct TestCompletionView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 // Focus is handled automatically
             }
+            
+            // Load previous and best records data
+            loadRecordsData()
         }
         .background(
             // Hidden button to capture Cmd+R key
@@ -164,6 +240,16 @@ struct TestCompletionView: View {
     }
     
     // MARK: - Helper Functions
+    
+    private func loadRecordsData() {
+        guard let repository = resultRepository else { return }
+        
+        // 前回記録を取得
+        previousResult = repository.getPreviousResultForTimerMode(timerMode, excluding: result)
+        
+        // ベスト記録を取得
+        bestResult = repository.getBestResultForTimerMode(timerMode)
+    }
     
     private func getHighlightedText() -> AttributedString {
         // Phase A: Use basic error counter for highlighting
@@ -247,6 +333,7 @@ struct ResultMetricView: View {
                 errors: 5
             ),
             timerMode: .exam,
+            resultRepository: nil,
             onRetry: {},
             onNewTask: {},
             onClose: {}
