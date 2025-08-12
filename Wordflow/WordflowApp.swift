@@ -16,7 +16,8 @@ struct WordflowApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             IELTSTask.self,
-            TypingResult.self
+            TypingResult.self,
+            TimeAttackResult.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema)
 

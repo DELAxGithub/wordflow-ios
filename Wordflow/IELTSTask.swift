@@ -24,6 +24,9 @@ final class IELTSTask {
     @Relationship(deleteRule: .cascade)
     var typingResults: [TypingResult] = []
     
+    @Relationship(deleteRule: .cascade)
+    var timeAttackResults: [TimeAttackResult] = []
+    
     init(taskType: TaskType, topic: String, modelAnswer: String, targetBandScore: Double) {
         self.id = UUID()
         self.taskType = taskType

@@ -297,6 +297,14 @@ final class TypingTestManager {
     // Current session comparison
     private(set) var isPersonalBest: Bool = false
     
+    // Time Attack Mode Properties
+    private(set) var isTimeAttackMode: Bool = false
+    private(set) var correctionCost: Int = 0
+    var isTrackingKeyPresses: Bool = false
+    var timeAttackStartTime: CFAbsoluteTime = 0.0
+    var isTimeAttackCompleted: Bool = false
+    var onTimeAttackCompleted: ((TimeAttackResult) -> Void)?
+    
     // Backward compatibility
     var currentWPM: Double { netWPM }  // Main display uses Net WPM
     var accuracy: Double { characterAccuracy }  // Main display uses character accuracy
@@ -517,5 +525,35 @@ final class TypingTestManager {
         currentTask = nil
         userInput = ""
         resetMetrics()
+    }
+    
+    // MARK: - Time Attack Internal Methods
+    
+    internal func setTimeAttackMode(_ value: Bool) {
+        isTimeAttackMode = value
+    }
+    
+    internal func setCorrectionCost(_ value: Int) {
+        correctionCost = value
+    }
+    
+    internal func incrementCorrectionCost() {
+        correctionCost += 1
+    }
+    
+    internal func setUserInput(_ input: String) {
+        userInput = input
+    }
+    
+    internal func performCalculateMetrics() {
+        calculateMetrics()
+    }
+    
+    internal var timeAttackWpmHistory: [Double] {
+        return wpmHistory
+    }
+    
+    internal var timeAttackWpmVariation: Double {
+        return wpmVariation
     }
 }
