@@ -61,7 +61,7 @@ struct TimeAttackCompletionView: View {
             )
             .scaleEffect(isAnimating ? 1 : 0.8)
             .opacity(isAnimating ? 1 : 0)
-            .frame(maxWidth: 600)
+            .frame(minWidth: 650, maxWidth: 750)
             
             // Celebration Effects
             if isNewRecord && isAnimating {
@@ -113,13 +113,14 @@ struct TimeAttackCompletionView: View {
     // MARK: - Results Section
     
     private var resultsSection: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 24) {
             Text("Your Results")
-                .font(.headline)
+                .font(.title2)
+                .fontWeight(.semibold)
                 .foregroundColor(.primary)
             
             // Main stats grid (2x3)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 2), spacing: 16) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 2), spacing: 20) {
                 ResultCard(
                     icon: "timer",
                     title: "Completion Time",
@@ -133,16 +134,16 @@ struct TimeAttackCompletionView: View {
                     icon: "target",
                     title: "Accuracy",
                     value: String(format: "%.1f%%", result.finalAccuracy),
-                    subtitle: accuracyFeedback,
-                    color: accuracyColor,
-                    isHighlighted: result.finalAccuracy >= 98.0
+                    subtitle: result.isFormulaValid ? accuracyFeedback : "⚠️ Check formula",
+                    color: result.isFormulaValid ? accuracyColor : .red,
+                    isHighlighted: result.isFormulaValid && result.finalAccuracy >= 98.0
                 )
                 
                 ResultCard(
                     icon: "speedometer",
                     title: "Gross WPM",
                     value: String(format: "%.1f", result.grossWPM),
-                    subtitle: "Characters per minute",
+                    subtitle: "Words per minute (CPM/5)",
                     color: .blue,
                     isHighlighted: result.grossWPM >= 60.0
                 )
@@ -150,10 +151,10 @@ struct TimeAttackCompletionView: View {
                 ResultCard(
                     icon: "gauge",
                     title: "Net WPM", 
-                    value: String(format: "%.1f", result.netWPM),
-                    subtitle: "Effective typing speed",
-                    color: netWPMColor,
-                    isHighlighted: result.netWPM >= 50.0
+                    value: result.isFormulaValid ? String(format: "%.1f", result.netWPM) : "FAIL",
+                    subtitle: result.isFormulaValid ? "Gross × Accuracy%" : "⚠️ Formula error",
+                    color: result.isFormulaValid ? netWPMColor : .red,
+                    isHighlighted: result.isFormulaValid && result.netWPM >= 50.0
                 )
                 
                 ResultCard(
@@ -176,13 +177,14 @@ struct TimeAttackCompletionView: View {
             }
             
             // Advanced metrics section
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Advanced Metrics")
-                    .font(.headline)
+                    .font(.title3)
+                    .fontWeight(.semibold)
                     .foregroundColor(.primary)
-                    .padding(.top)
+                    .padding(.top, 8)
                 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4), spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 4), spacing: 16) {
                     MetricCard(
                         title: "KSPC",
                         value: String(format: "%.2f", result.kspc),
@@ -422,25 +424,28 @@ struct MetricCard: View {
     let color: Color
     
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Text(title)
-                .font(.caption2)
+                .font(.caption)
+                .fontWeight(.medium)
                 .foregroundColor(.secondary)
             
             Text(value)
-                .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                .font(.system(size: 20, weight: .bold, design: .monospaced))
                 .foregroundColor(color)
             
             Text(subtitle)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundColor(.secondary)
-                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 6)
-        .background(color.opacity(0.05))
-        .cornerRadius(8)
+        .frame(maxWidth: .infinity, minHeight: 80)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .background(color.opacity(0.08))
+        .cornerRadius(10)
     }
 }
 
@@ -460,19 +465,22 @@ struct ResultCard: View {
                 .font(.title2)
                 .foregroundColor(color)
             
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 Text(title)
-                    .font(.caption)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
                     .foregroundColor(.secondary)
                 
                 Text(value)
-                    .font(.system(size: 24, weight: .bold, design: .monospaced))
+                    .font(.system(size: 28, weight: .bold, design: .monospaced))
                     .foregroundColor(isHighlighted ? color : .primary)
                 
                 Text(subtitle)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundColor(isHighlighted ? color : .secondary)
                     .fontWeight(isHighlighted ? .semibold : .regular)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
         }
         .frame(maxWidth: .infinity)

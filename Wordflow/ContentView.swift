@@ -9,7 +9,12 @@ import SwiftData
 struct ContentView: View {
     // MARK: - State
     
-    @State private var practiceMode: PracticeMode = .normal
+    @State private var practiceMode: PracticeMode = .normal  // 🔧 FIX: Explicitly start with normal mode
+    
+    // 🔧 DEBUG: Add computed property to verify state
+    private var debugModeInfo: String {
+        "Current mode: \(practiceMode.displayName) (\(practiceMode.rawValue))"
+    }
     
     // MARK: - Body
     
@@ -21,11 +26,35 @@ struct ContentView: View {
             Divider()
             
             // Main Content Based on Mode
-            switch practiceMode {
-            case .normal:
-                BasicTypingPracticeView()
-            case .timeAttack:
-                TimeAttackView()
+            Group {
+                // 🔧 CRITICAL FIX: Explicit switch statement for bulletproof view selection
+                switch practiceMode {
+                case .normal:
+                    BasicTypingPracticeView()
+                        .id("normal-practice-view-\(practiceMode.rawValue)")
+                        .onAppear {
+                            print("✅ SUCCESS: Displaying Normal Practice Mode - \(debugModeInfo)")
+                            print("✅ View mapping working correctly: .normal → BasicTypingPracticeView")
+                        }
+                        
+                case .timeAttack:
+                    TimeAttackView()
+                        .id("time-attack-view-\(practiceMode.rawValue)")
+                        .onAppear {
+                            print("✅ SUCCESS: Displaying Time Attack Mode - \(debugModeInfo)")
+                            print("✅ View mapping working correctly: .timeAttack → TimeAttackView")
+                        }
+                }
+            }
+            .id("main-content-switch-\(practiceMode.rawValue)")  // Force refresh when mode changes
+            .animation(nil, value: practiceMode)  // Disable animation temporarily
+        }
+        .onAppear {
+            print("🔧 DEBUG: ContentView appeared with initial mode: \(debugModeInfo)")
+            // 🚨 EMERGENCY FIX: Force initial state
+            if practiceMode != .normal {
+                print("🚨 CRITICAL: Forcing mode reset to normal")
+                practiceMode = .normal
             }
         }
     }
@@ -46,19 +75,21 @@ struct ContentView: View {
             
             Spacer()
             
-            // Mode Selection
+            // 🔧 CLEAN FIX: Simple segmented picker without overlapping elements
             Picker("練習モード", selection: $practiceMode) {
-                ForEach(PracticeMode.allCases, id: \.self) { mode in
-                    HStack(spacing: 4) {
-                        Image(systemName: mode.iconName)
-                        Text(mode.displayName)
-                    }
-                    .tag(mode)
-                }
+                // 通常練習 - text cursor icon
+                Text("📝 通常練習").tag(PracticeMode.normal)
+                
+                // タイムアタック - lightning bolt icon  
+                Text("⚡ タイムアタック").tag(PracticeMode.timeAttack)
             }
             .pickerStyle(.segmented)
-            .frame(width: 300)
-            .animation(.easeInOut(duration: 0.3), value: practiceMode)
+            .frame(width: 280)
+            .onChange(of: practiceMode) { oldValue, newValue in
+                print("🔧 DEBUG: Mode changed from \(oldValue.displayName) to \(newValue.displayName)")
+                print("🔧 DEBUG: Old mode: \(oldValue.rawValue) → New mode: \(newValue.rawValue)")
+                print("🔧 DEBUG: Condition check: practiceMode == .normal = \(newValue == .normal)")
+            }
         }
         .padding()
         .background(practiceMode == .timeAttack ? Color.orange.opacity(0.1) : Color.blue.opacity(0.1))
@@ -68,9 +99,14 @@ struct ContentView: View {
 
 // MARK: - Practice Mode Enum
 
-enum PracticeMode: String, CaseIterable {
+enum PracticeMode: String, CaseIterable, Equatable {
     case normal = "normal"
     case timeAttack = "timeAttack"
+    
+    // 🔧 CRITICAL FIX: Ensure correct order for picker - normal first, timeAttack second
+    static var allCases: [PracticeMode] {
+        return [.normal, .timeAttack]  // Explicitly order: 通常練習 first, タイムアタック second
+    }
     
     var displayName: String {
         switch self {
