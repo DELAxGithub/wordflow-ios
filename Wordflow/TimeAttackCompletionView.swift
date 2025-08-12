@@ -167,11 +167,11 @@ struct TimeAttackCompletionView: View {
                 
                 ResultCard(
                     icon: "star.fill",
-                    title: "Quality Score",
-                    value: String(format: "%.1f", result.qualityScore),
-                    subtitle: qualityDescription,
-                    color: qualityScoreColor,
-                    isHighlighted: result.qualityScore >= 45.0
+                    title: "Grade",
+                    value: result.performanceGrade,
+                    subtitle: gradeDescription,
+                    color: gradeColor,
+                    isHighlighted: result.performanceGrade.hasPrefix("A")
                 )
             }
             
@@ -205,10 +205,10 @@ struct TimeAttackCompletionView: View {
                     )
                     
                     MetricCard(
-                        title: "Grade",
-                        value: result.performanceGrade,
-                        subtitle: gradeDescription,
-                        color: gradeColor
+                        title: "Quality Score",
+                        value: String(format: "%.1f", result.qualityScore),
+                        subtitle: qualityDescription,
+                        color: qualityScoreColor
                     )
                 }
             }

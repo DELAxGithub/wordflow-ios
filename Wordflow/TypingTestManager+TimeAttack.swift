@@ -77,6 +77,15 @@ extension TypingTestManager {
             scoringResult: scoringResult
         )
         
+        // Debug: Print metrics to console
+        print("🎯 TimeAttack Metrics Debug:")
+        print("   Gross WPM: \(result.grossWPM)")
+        print("   Net WPM: \(result.netWPM)")  
+        print("   KSPC: \(result.kspc)")
+        print("   Backspace Rate: \(result.backspaceRate)%")
+        print("   Total Keystrokes: \(result.totalKeystrokes)")
+        print("   Quality Score: \(result.qualityScore)")
+        
         // 追加のパフォーマンス指標
         populatePerformanceMetrics(result)
         
