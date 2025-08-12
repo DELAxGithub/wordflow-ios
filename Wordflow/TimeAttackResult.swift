@@ -30,12 +30,25 @@ final class TimeAttackResult {
     
     // MARK: - Enhanced Metrics (Issue #31)
     var grossWPM: Double                   // (総打鍵文字数/5) ÷ 分
-    var netWPM: Double                     // grossWPM − (未修正エラー数 ÷ 分)
+    var netWPM: Double                     // grossWPM − (未修正エラー数/5 ÷ 分)
     var kspc: Double                       // 総打鍵キー数 ÷ 原文文字数
     var backspaceRate: Double              // Backspace回数 ÷ 総打鍵キー数
     var totalKeystrokes: Int               // 総打鍵キー数
     var backspaceCount: Int                // Backspace使用回数
     var qualityScore: Double               // Net WPM × Accuracy ÷ 100
+    
+    // 🔧 FIXED: Unfixed error metrics for proper Net WPM calculation
+    var unfixedErrors: Int                 // 未修正エラー数
+    var unfixedErrorRate: Double           // 未修正エラー率 (%)
+    
+    // 🔧 NEW: Detailed accuracy breakdown metrics
+    var wordAccuracy: Double               // 単語レベル正確性 (%)
+    var charAccuracy: Double               // 文字レベル正確性（編集距離ベース） (%)
+    var hybridAccuracy: Double             // ハイブリッド正確性（総合） (%)
+    
+    // 🚨 CRITICAL: Formula validation for sanity checks
+    var isFormulaValid: Bool               // Net WPM = Gross WPM × Accuracy validation
+    var formulaDeviation: Double           // Formula deviation percentage for debugging
     
     // MARK: - Session Metadata
     var sessionDuration: TimeInterval      // セッション全体時間（休憩含む）
@@ -79,6 +92,13 @@ final class TimeAttackResult {
             self.totalKeystrokes = scoring.totalKeystrokes
             self.backspaceCount = scoring.backspaceCount
             self.qualityScore = scoring.qualityScore
+            self.unfixedErrors = scoring.unfixedErrors
+            self.unfixedErrorRate = scoring.unfixedErrorRate
+            self.wordAccuracy = scoring.wordAccuracy
+            self.charAccuracy = scoring.charAccuracy
+            self.hybridAccuracy = scoring.hybridAccuracy
+            self.isFormulaValid = scoring.isFormulaValid
+            self.formulaDeviation = scoring.formulaDeviation
         } else {
             // Default values
             self.grossWPM = 0.0
@@ -88,6 +108,13 @@ final class TimeAttackResult {
             self.totalKeystrokes = 0
             self.backspaceCount = 0
             self.qualityScore = 0.0
+            self.unfixedErrors = 0
+            self.unfixedErrorRate = 0.0
+            self.wordAccuracy = 100.0
+            self.charAccuracy = 100.0
+            self.hybridAccuracy = 100.0
+            self.isFormulaValid = true
+            self.formulaDeviation = 0.0
         }
     }
     
@@ -180,6 +207,13 @@ final class TimeAttackResult {
             String(totalKeystrokes),
             String(backspaceCount),
             String(format: "%.1f", qualityScore),
+            String(unfixedErrors),
+            String(format: "%.1f", unfixedErrorRate),
+            String(format: "%.1f", wordAccuracy),
+            String(format: "%.1f", charAccuracy),
+            String(format: "%.1f", hybridAccuracy),
+            isFormulaValid ? "YES" : "NO",
+            String(format: "%.3f", formulaDeviation),
             badges.map { $0.displayName }.joined(separator: ";"),
             String(retryCount)
         ]
@@ -193,7 +227,9 @@ final class TimeAttackResult {
             "date", "task_type", "topic", "completion_time", "accuracy", 
             "corrections", "grade", "personal_best", "avg_wpm", "gross_wpm", "net_wpm",
             "kspc", "backspace_rate", "total_keystrokes", "backspace_count", 
-            "quality_score", "badges", "retry_count"
+            "quality_score", "unfixed_errors", "unfixed_error_rate", 
+            "word_accuracy", "char_accuracy", "hybrid_accuracy", "formula_valid", "formula_deviation",
+            "badges", "retry_count"
         ].joined(separator: ",")
     }
     

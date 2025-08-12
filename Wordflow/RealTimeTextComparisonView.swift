@@ -98,58 +98,78 @@ struct TextComparisonLogic {
         let targetChars = Array(target)
         let inputChars = Array(input)
         
+        // 🔧 FIXED: Use Global Alignment instead of simple index comparison
+        let alignmentResult = performGlobalAlignment(inputChars, targetChars)
+        
         var segments: [TextSegment] = []
         var correctChars = 0
         let totalTyped = inputChars.count
         
-        let maxLength = max(targetChars.count, inputChars.count)
+        // Build segments based on alignment operations
+        var targetIndex = 0
+        var inputIndex = 0
         
-        for i in 0..<maxLength {
-            let targetChar = i < targetChars.count ? targetChars[i] : nil
-            let inputChar = i < inputChars.count ? inputChars[i] : nil
-            
-            switch (targetChar, inputChar) {
-            case let (target?, input?) where target == input:
-                // Correct character
+        for operation in alignmentResult.operations {
+            switch operation.type {
+            case .match:
+                // Correct character - show green
+                let char = targetChars[targetIndex]
                 segments.append(TextSegment(
-                    text: String(target),
+                    text: String(char),
                     color: .green,
                     backgroundColor: Color.green.opacity(0.1),
                     isBold: false
                 ))
                 correctChars += 1
+                targetIndex += 1
+                inputIndex += 1
                 
-            case let (_, input?):
-                // Incorrect character
+            case .substitute:
+                // Wrong character - show red with input character
+                let inputChar = inputChars[inputIndex]
                 segments.append(TextSegment(
-                    text: String(input),
+                    text: String(inputChar),
                     color: .white,
                     backgroundColor: .red,
                     isBold: true
                 ))
+                targetIndex += 1
+                inputIndex += 1
                 
-            case let (target?, nil):
-                // Not yet typed
+            case .insert:
+                // Extra character in input - show red
+                let inputChar = inputChars[inputIndex]
                 segments.append(TextSegment(
-                    text: String(target),
+                    text: String(inputChar),
+                    color: .white,
+                    backgroundColor: .red,
+                    isBold: true
+                ))
+                inputIndex += 1
+                
+            case .delete:
+                // Missing character - show gray (not yet typed)
+                let targetChar = targetChars[targetIndex]
+                segments.append(TextSegment(
+                    text: String(targetChar),
                     color: .secondary,
                     backgroundColor: Color.clear,
                     isBold: false
                 ))
-                
-            case (nil, let input?):
-                // Extra characters (shouldn't happen in normal typing)
-                segments.append(TextSegment(
-                    text: String(input),
-                    color: .white,
-                    backgroundColor: .red,
-                    isBold: true
-                ))
-                
-            case (nil, nil):
-                // Both nil - shouldn't happen in our loop
-                break
+                targetIndex += 1
             }
+        }
+        
+        // Add remaining untyped characters
+        while targetIndex < targetChars.count {
+            let targetChar = targetChars[targetIndex]
+            segments.append(TextSegment(
+                text: String(targetChar),
+                color: .secondary,
+                backgroundColor: Color.clear,
+                isBold: false
+            ))
+            targetIndex += 1
         }
         
         let progressPercentage = targetChars.count > 0 ? 
@@ -170,6 +190,150 @@ struct TextComparisonLogic {
             totalTyped: totalTyped
         )
     }
+    
+    // 🔧 ULTRA-SAFE Global Alignment implementation with comprehensive bounds checking
+    private static func performGlobalAlignment(_ input: [Character], _ target: [Character]) -> UIAlignmentResult {
+        let inputCount = input.count
+        let targetCount = target.count
+        
+        // 🔧 CRASH FIX: Handle edge cases immediately
+        guard inputCount >= 0 && targetCount >= 0 else {
+            print("⚠️ Invalid input/target counts: input=\(inputCount), target=\(targetCount)")
+            return UIAlignmentResult(operations: [], unfixedErrors: 0)
+        }
+        
+        // 🔧 Handle empty cases safely
+        if inputCount == 0 && targetCount == 0 {
+            return UIAlignmentResult(operations: [], unfixedErrors: 0)
+        }
+        
+        if inputCount == 0 {
+            // All characters are deletions
+            let operations = (0..<targetCount).map { i in
+                UIAlignmentOperation(type: .delete, inputIndex: 0, targetIndex: i)
+            }
+            return UIAlignmentResult(operations: operations, unfixedErrors: targetCount)
+        }
+        
+        if targetCount == 0 {
+            // All characters are insertions
+            let operations = (0..<inputCount).map { i in
+                UIAlignmentOperation(type: .insert, inputIndex: i, targetIndex: 0)
+            }
+            return UIAlignmentResult(operations: operations, unfixedErrors: inputCount)
+        }
+        
+        // 🔧 SAFE: Create matrix with validated dimensions
+        let matrixRows = inputCount + 1
+        let matrixCols = targetCount + 1
+        
+        guard matrixRows > 0 && matrixCols > 0 && matrixRows <= 10000 && matrixCols <= 10000 else {
+            print("⚠️ Matrix dimensions out of safe range: \(matrixRows)x\(matrixCols)")
+            return UIAlignmentResult(operations: [], unfixedErrors: max(inputCount, targetCount))
+        }
+        
+        var dp = Array(repeating: Array(repeating: 0, count: matrixCols), count: matrixRows)
+        
+        // 🔧 SAFE: Initialize base cases with bounds checking
+        for i in 0..<matrixRows {
+            guard i < dp.count else { break }
+            dp[i][0] = i
+        }
+        for j in 0..<matrixCols {
+            guard j < dp[0].count else { break }
+            dp[0][j] = j
+        }
+        
+        // 🔧 SAFE: Fill the matrix with comprehensive bounds checking
+        for i in 1..<matrixRows {
+            for j in 1..<matrixCols {
+                // Triple check bounds before array access
+                guard i < dp.count && j < dp[i].count &&
+                      i-1 < dp.count && j-1 < dp[i-1].count &&
+                      i-1 < input.count && j-1 < target.count else {
+                    print("⚠️ Matrix bounds error at i=\(i), j=\(j)")
+                    continue
+                }
+                
+                let matchCost = input[i-1] == target[j-1] ? 0 : 1
+                dp[i][j] = min(
+                    dp[i-1][j] + 1,     // Insert
+                    dp[i][j-1] + 1,     // Delete
+                    dp[i-1][j-1] + matchCost // Match/Substitute
+                )
+            }
+        }
+        
+        // 🔧 SAFE: Backtrack with bounds checking
+        var operations: [UIAlignmentOperation] = []
+        var i = inputCount
+        var j = targetCount
+        var safetyCounter = 0
+        let maxOperations = (inputCount + targetCount) * 2 // Safety limit
+        
+        while (i > 0 || j > 0) && safetyCounter < maxOperations {
+            safetyCounter += 1
+            
+            // Comprehensive bounds checking
+            guard i >= 0 && j >= 0 && i < dp.count && j < dp[0].count else {
+                print("⚠️ Backtrack bounds error: i=\(i), j=\(j)")
+                break
+            }
+            
+            if i > 0 && j > 0 && i-1 < input.count && j-1 < target.count &&
+               i-1 >= 0 && j-1 >= 0 && i-1 < dp.count && j-1 < dp[0].count {
+                let matchCost = input[i-1] == target[j-1] ? 0 : 1
+                if dp[i][j] == dp[i-1][j-1] + matchCost {
+                    // Match or substitute
+                    operations.insert(UIAlignmentOperation(
+                        type: input[i-1] == target[j-1] ? .match : .substitute,
+                        inputIndex: i-1,
+                        targetIndex: j-1
+                    ), at: 0)
+                    i -= 1
+                    j -= 1
+                    continue
+                }
+            }
+            
+            if i > 0 && i-1 >= 0 && i-1 < dp.count && j < dp[i-1].count {
+                if dp[i][j] == dp[i-1][j] + 1 {
+                    // Insert
+                    operations.insert(UIAlignmentOperation(
+                        type: .insert,
+                        inputIndex: i-1,
+                        targetIndex: j
+                    ), at: 0)
+                    i -= 1
+                    continue
+                }
+            }
+            
+            if j > 0 && j-1 >= 0 && i < dp.count && j-1 < dp[i].count {
+                // Delete
+                operations.insert(UIAlignmentOperation(
+                    type: .delete,
+                    inputIndex: i,
+                    targetIndex: j-1
+                ), at: 0)
+                j -= 1
+                continue
+            }
+            
+            // Fallback - should never reach here
+            print("⚠️ Backtrack fallback at i=\(i), j=\(j)")
+            break
+        }
+        
+        if safetyCounter >= maxOperations {
+            print("⚠️ Backtrack safety limit reached")
+        }
+        
+        return UIAlignmentResult(
+            operations: operations,
+            unfixedErrors: operations.filter { $0.type != .match }.count
+        )
+    }
 }
 
 // MARK: - Supporting Types
@@ -188,6 +352,26 @@ struct TextSegment {
     let color: Color
     let backgroundColor: Color
     let isBold: Bool
+}
+
+// MARK: - UI Specific Alignment Types (lightweight for display)
+
+struct UIAlignmentOperation {
+    let type: UIAlignmentOperationType
+    let inputIndex: Int
+    let targetIndex: Int
+}
+
+enum UIAlignmentOperationType {
+    case match      // Correct character
+    case substitute // Wrong character
+    case insert     // Extra character in input
+    case delete     // Missing character from target
+}
+
+struct UIAlignmentResult {
+    let operations: [UIAlignmentOperation]
+    let unfixedErrors: Int
 }
 
 // MARK: - Preview

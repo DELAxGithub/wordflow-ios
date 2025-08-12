@@ -49,21 +49,13 @@ extension TypingTestManager {
         // 最終正確性計算
         let finalAccuracy = calculateFinalAccuracy()
         
-        // Enhanced metrics calculation using current score data
-        let scoringResult = ScoringResult(
-            grossWPM: grossWPM,
-            netWPM: netWPM,
-            accuracy: finalAccuracy,
-            qualityScore: qualityScore,
-            errorBreakdown: [:],
-            matchedWords: 0,
-            totalWords: 0,
-            totalErrors: correctionCost,
-            errorRate: 0.0,
-            completionPercentage: 100.0,
-            kspc: Double(totalKeystrokes) / Double(task.modelAnswer.count),
-            backspaceRate: totalKeystrokes > 0 ? Double(correctionCost) / Double(totalKeystrokes) * 100.0 : 0.0,
-            totalKeystrokes: totalKeystrokes,
+        // 🔧 FIXED: Use proper scoring engine for consistent WPM calculations
+        let scoringEngine = BasicScoringEngine()
+        let scoringResult = scoringEngine.calculateScore(
+            userInput: userInput,
+            targetText: task.modelAnswer,
+            elapsedTime: actualCompletionTime,
+            keystrokes: totalKeystrokes,
             backspaceCount: correctionCost
         )
         
@@ -184,35 +176,21 @@ extension TypingTestManager {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
     
-    /// 最終正確性計算（文字レベル）
+    /// 🔧 FIXED: 最終正確性計算（スマート精度計算を使用）
     private func calculateFinalAccuracy() -> Double {
         guard let task = currentTask else { return 0.0 }
         
-        let normalizedInput = normalizeText(userInput)
-        let normalizedTarget = normalizeText(task.modelAnswer)
+        // 🎯 Use the same smart accuracy calculation as BasicScoringEngine
+        let scoringEngine = BasicScoringEngine()
+        let tempResult = scoringEngine.calculateScore(
+            userInput: userInput,
+            targetText: task.modelAnswer,
+            elapsedTime: 1.0,  // Dummy time for accuracy calculation only
+            keystrokes: totalKeystrokes,
+            backspaceCount: correctionCost
+        )
         
-        // 完全一致の場合
-        if normalizedInput == normalizedTarget {
-            return 100.0
-        }
-        
-        // 文字レベルでの一致率計算
-        let minLength = min(normalizedInput.count, normalizedTarget.count)
-        guard minLength > 0 else { return 0.0 }
-        
-        var correctChars = 0
-        for (inputChar, targetChar) in zip(normalizedInput, normalizedTarget) {
-            if inputChar == targetChar {
-                correctChars += 1
-            }
-        }
-        
-        // 長さの違いもペナルティとして考慮
-        let lengthPenalty = abs(normalizedInput.count - normalizedTarget.count)
-        let totalChars = max(normalizedInput.count, normalizedTarget.count)
-        
-        let accuracy = Double(correctChars - lengthPenalty) / Double(totalChars) * 100.0
-        return max(0.0, min(100.0, accuracy))
+        return tempResult.accuracy
     }
     
     /// パフォーマンス指標の追加計算

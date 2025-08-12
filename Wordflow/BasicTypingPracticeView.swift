@@ -720,22 +720,28 @@ struct BasicTypingPracticeView: View {
             return AttributedString(userInput)
         }
         
-        // Phase A: Use basic error counter for highlighting (keeping existing pattern)
-        let errorInfo = errorCounter.countBasicErrors(input: userInput, target: task.modelAnswer)
-        var attributedString = AttributedString(userInput)
+        // 🔧 CRASH FIX: Use simple fallback approach to avoid index manipulation crashes
+        // If userInput is empty, return as-is
+        guard !userInput.isEmpty else { return AttributedString(userInput) }
         
-        // Apply basic highlighting based on error positions
-        for (index, _) in userInput.enumerated() {
+        // Use character-by-character comparison instead of complex AttributedString index manipulation
+        let errorInfo = errorCounter.countBasicErrors(input: userInput, target: task.modelAnswer)
+        var result = AttributedString("")
+        
+        // Build the attributed string character by character (safer approach)
+        for (index, char) in userInput.enumerated() {
+            var charString = AttributedString(String(char))
+            
             if errorInfo.errorPositions.contains(index) {
-                let range = attributedString.index(attributedString.startIndex, offsetByCharacters: index)..<attributedString.index(attributedString.startIndex, offsetByCharacters: index + 1)
-                attributedString[range].backgroundColor = .red.opacity(0.3)
+                charString.backgroundColor = .red.opacity(0.3)
             } else {
-                let range = attributedString.index(attributedString.startIndex, offsetByCharacters: index)..<attributedString.index(attributedString.startIndex, offsetByCharacters: index + 1)
-                attributedString[range].backgroundColor = .green.opacity(0.3)
+                charString.backgroundColor = .green.opacity(0.3)
             }
+            
+            result.append(charString)
         }
         
-        return attributedString
+        return result
     }
     
     // MARK: - Target Text Helper Methods
