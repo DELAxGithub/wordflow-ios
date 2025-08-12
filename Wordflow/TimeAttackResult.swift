@@ -28,6 +28,15 @@ final class TimeAttackResult {
     var peakWPM: Double                    // 最高WPM（参考値）
     var consistencyScore: Double           // 一貫性スコア（0.0-1.0）
     
+    // MARK: - Enhanced Metrics (Issue #31)
+    var grossWPM: Double                   // (総打鍵文字数/5) ÷ 分
+    var netWPM: Double                     // grossWPM − (未修正エラー数 ÷ 分)
+    var kspc: Double                       // 総打鍵キー数 ÷ 原文文字数
+    var backspaceRate: Double              // Backspace回数 ÷ 総打鍵キー数
+    var totalKeystrokes: Int               // 総打鍵キー数
+    var backspaceCount: Int                // Backspace使用回数
+    var qualityScore: Double               // Net WPM × Accuracy ÷ 100
+    
     // MARK: - Session Metadata
     var sessionDuration: TimeInterval      // セッション全体時間（休憩含む）
     var startedAt: Date                    // セッション開始時刻
@@ -40,7 +49,7 @@ final class TimeAttackResult {
     
     // MARK: - Initializers
     init(task: IELTSTask, completionTime: TimeInterval, accuracy: Double, 
-         correctionCost: Int, userInput: String) {
+         correctionCost: Int, userInput: String, scoringResult: ScoringResult? = nil) {
         self.id = UUID()
         self.task = task
         self.completionTime = completionTime
@@ -60,6 +69,26 @@ final class TimeAttackResult {
         self.sessionDuration = completionTime
         self.retryCount = 0
         self.deviceInfo = TimeAttackResult.generateDeviceInfo()
+        
+        // Enhanced metrics from scoring result
+        if let scoring = scoringResult {
+            self.grossWPM = scoring.grossWPM
+            self.netWPM = scoring.netWPM
+            self.kspc = scoring.kspc
+            self.backspaceRate = scoring.backspaceRate
+            self.totalKeystrokes = scoring.totalKeystrokes
+            self.backspaceCount = scoring.backspaceCount
+            self.qualityScore = scoring.qualityScore
+        } else {
+            // Default values
+            self.grossWPM = 0.0
+            self.netWPM = 0.0
+            self.kspc = 0.0
+            self.backspaceRate = 0.0
+            self.totalKeystrokes = 0
+            self.backspaceCount = 0
+            self.qualityScore = 0.0
+        }
     }
     
     // MARK: - Computed Properties
@@ -144,6 +173,13 @@ final class TimeAttackResult {
             performanceGrade,
             isPersonalBest ? "YES" : "NO",
             String(format: "%.1f", averageWPM),
+            String(format: "%.1f", grossWPM),
+            String(format: "%.1f", netWPM),
+            String(format: "%.2f", kspc),
+            String(format: "%.1f", backspaceRate),
+            String(totalKeystrokes),
+            String(backspaceCount),
+            String(format: "%.1f", qualityScore),
             badges.map { $0.displayName }.joined(separator: ";"),
             String(retryCount)
         ]
@@ -155,7 +191,9 @@ final class TimeAttackResult {
     static func csvHeader() -> String {
         return [
             "date", "task_type", "topic", "completion_time", "accuracy", 
-            "corrections", "grade", "personal_best", "avg_wpm", "badges", "retry_count"
+            "corrections", "grade", "personal_best", "avg_wpm", "gross_wpm", "net_wpm",
+            "kspc", "backspace_rate", "total_keystrokes", "backspace_count", 
+            "quality_score", "badges", "retry_count"
         ].joined(separator: ",")
     }
     

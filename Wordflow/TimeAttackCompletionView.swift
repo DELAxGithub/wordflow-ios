@@ -118,7 +118,7 @@ struct TimeAttackCompletionView: View {
                 .font(.headline)
                 .foregroundColor(.primary)
             
-            // Main stats grid
+            // Main stats grid (2x3)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 2), spacing: 16) {
                 ResultCard(
                     icon: "timer",
@@ -139,6 +139,24 @@ struct TimeAttackCompletionView: View {
                 )
                 
                 ResultCard(
+                    icon: "speedometer",
+                    title: "Gross WPM",
+                    value: String(format: "%.1f", result.grossWPM),
+                    subtitle: "Characters per minute",
+                    color: .blue,
+                    isHighlighted: result.grossWPM >= 60.0
+                )
+                
+                ResultCard(
+                    icon: "gauge",
+                    title: "Net WPM", 
+                    value: String(format: "%.1f", result.netWPM),
+                    subtitle: "Effective typing speed",
+                    color: netWPMColor,
+                    isHighlighted: result.netWPM >= 50.0
+                )
+                
+                ResultCard(
                     icon: "gearshape.fill",
                     title: "Corrections",
                     value: "\(result.correctionCost)",
@@ -149,12 +167,50 @@ struct TimeAttackCompletionView: View {
                 
                 ResultCard(
                     icon: "star.fill",
-                    title: "Grade",
-                    value: result.performanceGrade,
-                    subtitle: gradeDescription,
-                    color: gradeColor,
-                    isHighlighted: result.performanceGrade.hasPrefix("A")
+                    title: "Quality Score",
+                    value: String(format: "%.1f", result.qualityScore),
+                    subtitle: qualityDescription,
+                    color: qualityScoreColor,
+                    isHighlighted: result.qualityScore >= 45.0
                 )
+            }
+            
+            // Advanced metrics section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Advanced Metrics")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .padding(.top)
+                
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4), spacing: 12) {
+                    MetricCard(
+                        title: "KSPC",
+                        value: String(format: "%.2f", result.kspc),
+                        subtitle: "Keystrokes per char",
+                        color: kspcColor
+                    )
+                    
+                    MetricCard(
+                        title: "Backspace Rate",
+                        value: String(format: "%.1f%%", result.backspaceRate),
+                        subtitle: "Correction frequency",
+                        color: backspaceRateColor
+                    )
+                    
+                    MetricCard(
+                        title: "Total Keystrokes",
+                        value: "\(result.totalKeystrokes)",
+                        subtitle: "Keys pressed",
+                        color: .gray
+                    )
+                    
+                    MetricCard(
+                        title: "Grade",
+                        value: result.performanceGrade,
+                        subtitle: gradeDescription,
+                        color: gradeColor
+                    )
+                }
             }
             
             // Comparison with previous attempts
@@ -314,6 +370,77 @@ struct TimeAttackCompletionView: View {
         case "C+", "C": return .orange
         default: return .red
         }
+    }
+    
+    private var netWPMColor: Color {
+        let netWPM = result.netWPM
+        if netWPM >= 50 { return .green }
+        else if netWPM >= 35 { return .blue }
+        else if netWPM >= 20 { return .orange }
+        else { return .red }
+    }
+    
+    private var qualityScoreColor: Color {
+        let quality = result.qualityScore
+        if quality >= 45 { return .green }
+        else if quality >= 30 { return .blue }
+        else if quality >= 15 { return .orange }
+        else { return .red }
+    }
+    
+    private var qualityDescription: String {
+        let quality = result.qualityScore
+        if quality >= 45 { return "Excellent" }
+        else if quality >= 30 { return "Good" }
+        else if quality >= 15 { return "Fair" }
+        else { return "Needs Practice" }
+    }
+    
+    private var kspcColor: Color {
+        let kspc = result.kspc
+        if kspc <= 1.05 { return .green }      // Excellent efficiency
+        else if kspc <= 1.15 { return .blue } // Good efficiency  
+        else if kspc <= 1.30 { return .orange } // Fair efficiency
+        else { return .red }                   // Poor efficiency
+    }
+    
+    private var backspaceRateColor: Color {
+        let rate = result.backspaceRate
+        if rate <= 2.0 { return .green }       // Very low error rate
+        else if rate <= 5.0 { return .blue }  // Low error rate
+        else if rate <= 10.0 { return .orange } // Moderate error rate
+        else { return .red }                   // High error rate
+    }
+}
+
+// MARK: - Metric Card View (Compact)
+
+struct MetricCard: View {
+    let title: String
+    let value: String
+    let subtitle: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            
+            Text(value)
+                .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                .foregroundColor(color)
+            
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 6)
+        .background(color.opacity(0.05))
+        .cornerRadius(8)
     }
 }
 

@@ -49,13 +49,32 @@ extension TypingTestManager {
         // 最終正確性計算
         let finalAccuracy = calculateFinalAccuracy()
         
+        // Enhanced metrics calculation using current score data
+        let scoringResult = ScoringResult(
+            grossWPM: grossWPM,
+            netWPM: netWPM,
+            accuracy: finalAccuracy,
+            qualityScore: qualityScore,
+            errorBreakdown: [:],
+            matchedWords: 0,
+            totalWords: 0,
+            totalErrors: correctionCost,
+            errorRate: 0.0,
+            completionPercentage: 100.0,
+            kspc: Double(totalKeystrokes) / Double(task.modelAnswer.count),
+            backspaceRate: totalKeystrokes > 0 ? Double(correctionCost) / Double(totalKeystrokes) * 100.0 : 0.0,
+            totalKeystrokes: totalKeystrokes,
+            backspaceCount: correctionCost
+        )
+        
         // Time Attack 結果生成
         let result = TimeAttackResult(
             task: task,
             completionTime: actualCompletionTime,
             accuracy: finalAccuracy,
             correctionCost: correctionCost,
-            userInput: userInput
+            userInput: userInput,
+            scoringResult: scoringResult
         )
         
         // 追加のパフォーマンス指標
