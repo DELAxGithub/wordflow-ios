@@ -75,9 +75,9 @@ enum TimerMode: Codable, Identifiable, CaseIterable, Hashable {
 
 // MARK: - Scoring Result (Phase A)
 struct ScoringResult {
-    let grossWPM: Double        // 入力した単語総数 ÷ 経過時間（分）
-    let netWPM: Double          // 正しく一致した単語数 ÷ 経過時間（分）
-    let accuracy: Double        // 一致単語数 ÷ 目標単語数 × 100
+    let grossWPM: Double        // (総打鍵文字数/5) ÷ 分
+    let netWPM: Double          // grossWPM − (未修正エラー数 ÷ 分)
+    let accuracy: Double        // clamp(0, 100×netWPM/grossWPM, 100)
     let qualityScore: Double    // Net WPM × Accuracy ÷ 100
     let errorBreakdown: [String: Int] // Simplified for now
     let matchedWords: Int
@@ -86,6 +86,12 @@ struct ScoringResult {
     let errorRate: Double
     let completionPercentage: Double
     
+    // Enhanced metrics (Issue #31)
+    let kspc: Double           // 総打鍵キー数 ÷ 原文文字数 (Keystrokes Per Character)
+    let backspaceRate: Double  // Backspace回数 ÷ 総打鍵キー数
+    let totalKeystrokes: Int   // 総打鍵キー数
+    let backspaceCount: Int    // Backspace使用回数
+    
     // Legacy compatibility
     var characterAccuracy: Double { accuracy }
     var basicErrorCount: Int { totalErrors }
@@ -93,7 +99,7 @@ struct ScoringResult {
 
 // MARK: - Basic Scoring Engine (Phase A)
 class BasicScoringEngine {
-    func calculateScore(userInput: String, targetText: String, elapsedTime: TimeInterval) -> ScoringResult {
+    func calculateScore(userInput: String, targetText: String, elapsedTime: TimeInterval, keystrokes: Int = 0, backspaceCount: Int = 0) -> ScoringResult {
         let elapsedMinutes = max(0.001, elapsedTime / 60.0)
         
         // Word-based calculations for WPM
@@ -122,17 +128,32 @@ class BasicScoringEngine {
         let incorrectChars = Int(Double(totalInputChars) * (100.0 - accuracy) / 100.0)
         let errorRate = totalInputChars > 0 ? Double(incorrectChars) / Double(totalInputChars) * 100 : 0
         
+        // Enhanced metrics calculations (Issue #31)
+        // KSPC: 総打鍵キー数 ÷ 原文文字数
+        let targetCharCount = targetText.count
+        let kspc = targetCharCount > 0 ? Double(keystrokes) / Double(targetCharCount) : 0.0
+        
+        // Backspace率: Backspace回数 ÷ 総打鍵キー数  
+        let backspaceRate = keystrokes > 0 ? Double(backspaceCount) / Double(keystrokes) * 100.0 : 0.0
+        
+        // Updated formula for accuracy: clamp(0, 100×netWPM/grossWPM, 100)
+        let calculatedAccuracy = grossWPM > 0 ? min(100.0, max(0.0, 100.0 * netWPM / grossWPM)) : accuracy
+        
         return ScoringResult(
             grossWPM: grossWPM,
             netWPM: netWPM,
-            accuracy: accuracy,
+            accuracy: calculatedAccuracy,
             qualityScore: qualityScore,
             errorBreakdown: [:],
             matchedWords: Int(estimatedCorrectWords),
             totalWords: targetWords.count,
             totalErrors: incorrectChars,
             errorRate: errorRate,
-            completionPercentage: completionPercentage
+            completionPercentage: completionPercentage,
+            kspc: kspc,
+            backspaceRate: backspaceRate,
+            totalKeystrokes: keystrokes,
+            backspaceCount: backspaceCount
         )
     }
     
@@ -262,7 +283,8 @@ final class TypingTestManager {
     private(set) var currentScore: ScoringResult = ScoringResult(
         grossWPM: 0, netWPM: 0, accuracy: 100, qualityScore: 0,
         errorBreakdown: [:], matchedWords: 0, totalWords: 0,
-        totalErrors: 0, errorRate: 0, completionPercentage: 0
+        totalErrors: 0, errorRate: 0, completionPercentage: 0,
+        kspc: 0, backspaceRate: 0, totalKeystrokes: 0, backspaceCount: 0
     )
     
     // Legacy compatibility properties
@@ -300,6 +322,7 @@ final class TypingTestManager {
     // Time Attack Mode Properties
     private(set) var isTimeAttackMode: Bool = false
     private(set) var correctionCost: Int = 0
+    private(set) var totalKeystrokes: Int = 0  // Total keystroke count
     var isTrackingKeyPresses: Bool = false
     var timeAttackStartTime: CFAbsoluteTime = 0.0
     var isTimeAttackCompleted: Bool = false
@@ -422,7 +445,9 @@ final class TypingTestManager {
         currentScore = scoringEngine.calculateScore(
             userInput: userInput,
             targetText: task.modelAnswer,
-            elapsedTime: elapsedTime
+            elapsedTime: elapsedTime,
+            keystrokes: totalKeystrokes,
+            backspaceCount: correctionCost
         )
         
         // Track WPM history for consistency calculation (using new netWPM)
@@ -515,7 +540,8 @@ final class TypingTestManager {
         currentScore = ScoringResult(
             grossWPM: 0, netWPM: 0, accuracy: 100, qualityScore: 0,
             errorBreakdown: [:], matchedWords: 0, totalWords: 0,
-            totalErrors: 0, errorRate: 0, completionPercentage: 0
+            totalErrors: 0, errorRate: 0, completionPercentage: 0,
+            kspc: 0, backspaceRate: 0, totalKeystrokes: 0, backspaceCount: 0
         )
         wpmHistory.removeAll()
         wpmVariation = 0
@@ -539,6 +565,16 @@ final class TypingTestManager {
     
     internal func incrementCorrectionCost() {
         correctionCost += 1
+        // Also count as keystroke
+        totalKeystrokes += 1
+    }
+    
+    internal func incrementKeystrokeCount() {
+        totalKeystrokes += 1
+    }
+    
+    internal func setKeystrokeCount(_ value: Int) {
+        totalKeystrokes = value
     }
     
     internal func setUserInput(_ input: String) {

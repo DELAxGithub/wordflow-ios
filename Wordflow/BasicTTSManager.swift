@@ -166,9 +166,9 @@ enum TTSSpeed: String, CaseIterable {
     
     var displayName: String { 
         switch self {
-        case .verySlow: return "Very Slow (0.1x)"
-        case .slow: return "Slow (0.30x)"
-        case .normal: return "Normal (0.45x)"
+        case .verySlow: return "Very Slow (\(String(format: "%.1fx", rate)))"
+        case .slow: return "Slow (\(String(format: "%.2fx", rate)))"
+        case .normal: return "Normal (\(String(format: "%.2fx", rate)))"
         }
     }
     

@@ -23,6 +23,7 @@ extension TypingTestManager {
         // Time Attack 固有の初期化
         setTimeAttackMode(true)
         setCorrectionCost(0)
+        setKeystrokeCount(0)  // Reset keystroke counter
         isTimeAttackCompleted = false
         timeAttackStartTime = CFAbsoluteTimeGetCurrent()
         isTrackingKeyPresses = true
@@ -134,6 +135,9 @@ extension TypingTestManager {
     /// キー入力処理
     private func handleKeyPress(_ event: NSEvent) {
         guard isTimeAttackMode && isTrackingKeyPresses else { return }
+        
+        // Count all keystrokes
+        incrementKeystrokeCount()
         
         // Delete/Backspace キーの検出
         let keyCode = event.keyCode
