@@ -28,6 +28,8 @@ struct BasicTypingPracticeView: View {
     @State private var showingCompletionModal = false
     @State private var showingCustomTaskCreation = false
     @State private var completionResult: TypingResult?
+    @State private var showingErrorAnalysis = false
+    @State private var currentErrorAnalysis: DetailedErrorAnalysis?
     
     // Audio Settings
     @State private var autoPlayAudio = true
@@ -106,6 +108,22 @@ struct BasicTypingPracticeView: View {
                 },
                 taskRepository: taskRepository
             )
+        }
+        .sheet(isPresented: $showingErrorAnalysis) {
+            if let analysis = currentErrorAnalysis {
+                NavigationView {
+                    ErrorAnalysisView(analysis: analysis)
+                        .navigationTitle("Error Analysis Report")
+                        .toolbar {
+                            ToolbarItem(placement: .primaryAction) {
+                                Button("Done") {
+                                    showingErrorAnalysis = false
+                                }
+                            }
+                        }
+                }
+                .frame(minWidth: 600, minHeight: 500)
+            }
         }
         .onKeyPress(.leftArrow, phases: [.down, .repeat]) { keyPress in
             // Check if Shift key is pressed for rewind shortcut
@@ -204,6 +222,12 @@ struct BasicTypingPracticeView: View {
                 }
                 .buttonStyle(.bordered)
                 
+                Button("Error Analysis", systemImage: "chart.bar.doc.horizontal") {
+                    performErrorAnalysis()
+                }
+                .buttonStyle(.bordered)
+                .disabled(userInput.isEmpty || selectedTask == nil)
+                
                 Toggle(isOn: $autoPlayAudio) {
                     HStack(spacing: 4) {
                         Image(systemName: autoPlayAudio ? "speaker.wave.2.fill" : "speaker.slash.fill")
@@ -239,14 +263,29 @@ struct BasicTypingPracticeView: View {
             // Target Text Display
             ScrollView {
                 if let task = selectedTask {
-                    Text(task.modelAnswer)
-                        .font(.body)
-                        .lineSpacing(4)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                        .background(Color(NSColor.textBackgroundColor))
-                        .cornerRadius(8)
+                    RealTimeTextComparisonView(
+                        targetText: task.modelAnswer,
+                        userInput: userInput,
+                        showCursor: testManager.isActive
+                    )
+                    .font(.body)
+                    .lineSpacing(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Color(NSColor.textBackgroundColor))
+                    .cornerRadius(8)
+                    .textSelection(.enabled)
+                    .contextMenu {
+                        Button("Copy Text", systemImage: "doc.on.doc") {
+                            copyTargetText()
+                        }
+                        .keyboardShortcut("c", modifiers: .command)
+                        
+                        Button("Select All", systemImage: "selection.pin.in.out") {
+                            selectAllTargetText()
+                        }
+                        .keyboardShortcut("a", modifiers: .command)
+                    }
                 } else {
                     VStack {
                         Image(systemName: "doc.text")
@@ -697,6 +736,31 @@ struct BasicTypingPracticeView: View {
         }
         
         return attributedString
+    }
+    
+    // MARK: - Target Text Helper Methods
+    
+    private func copyTargetText() {
+        guard let task = selectedTask else { return }
+        
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(task.modelAnswer, forType: .string)
+    }
+    
+    private func selectAllTargetText() {
+        // Provide visual feedback for text selection
+        NSSound(named: "Tink")?.play()
+    }
+    
+    // MARK: - Error Analysis Methods
+    
+    private func performErrorAnalysis() {
+        guard let task = selectedTask, !userInput.isEmpty else { return }
+        
+        let analysis = errorCounter.analyzeErrors(input: userInput, target: task.modelAnswer)
+        currentErrorAnalysis = analysis
+        showingErrorAnalysis = true
     }
 }
 

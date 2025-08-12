@@ -198,22 +198,23 @@ struct TimeAttackView: View {
             ScrollView {
                 if let task = selectedTask {
                     VStack(alignment: .leading, spacing: 16) {
-                        SelectableTextView(text: task.modelAnswer)
-                            .frame(minHeight: 120)
-                            .padding()
-                            .background(Color(NSColor.textBackgroundColor))
-                            .cornerRadius(8)
-                            .contextMenu {
-                                Button("Copy Text", systemImage: "doc.on.doc") {
-                                    copyTargetText()
-                                }
-                                .keyboardShortcut("c", modifiers: .command)
-                                
-                                Button("Select All", systemImage: "selection.pin.in.out") {
-                                    selectAllTargetText()
-                                }
-                                .keyboardShortcut("a", modifiers: .command)
+                        RealTimeTextComparisonView(
+                            targetText: task.modelAnswer,
+                            userInput: userInput,
+                            showCursor: timeAttackManager.isActive
+                        )
+                        .frame(minHeight: 120)
+                        .contextMenu {
+                            Button("Copy Text", systemImage: "doc.on.doc") {
+                                copyTargetText()
                             }
+                            .keyboardShortcut("c", modifiers: .command)
+                            
+                            Button("Select All", systemImage: "selection.pin.in.out") {
+                                selectAllTargetText()
+                            }
+                            .keyboardShortcut("a", modifiers: .command)
+                        }
                         
                         // Personal Best Display
                         if let stats = timeAttackManager.currentStats {
