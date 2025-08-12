@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
+import AppKit
 
 struct TimeAttackCompletionView: View {
     // MARK: - Properties
@@ -159,7 +161,7 @@ struct TimeAttackCompletionView: View {
                 
                 ResultCard(
                     icon: "gearshape.fill",
-                    title: "Corrections",
+                    title: "Backspaces",
                     value: "\(result.correctionCost)",
                     subtitle: correctionFeedback,
                     color: correctionColor,
@@ -262,26 +264,147 @@ struct TimeAttackCompletionView: View {
     // MARK: - Action Buttons
     
     private var actionButtons: some View {
-        HStack(spacing: 16) {
-            Button("Retry Same Task", systemImage: "arrow.clockwise") {
-                onRetry()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
+        VStack(spacing: 16) {
+            // JSON Export Section
+            jsonExportSection
             
-            Button("Try Different Task", systemImage: "doc.text") {
-                onNewTask()
+            // Main Action Buttons
+            HStack(spacing: 16) {
+                Button("Retry Same Task", systemImage: "arrow.clockwise") {
+                    onRetry()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                
+                Button("Try Different Task", systemImage: "doc.text") {
+                    onNewTask()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                
+                Button("Continue", systemImage: "checkmark") {
+                    onClose()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            
-            Button("Continue", systemImage: "checkmark") {
-                onClose()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
         }
         .animation(.easeOut(duration: 0.3).delay(2.0), value: showStats)
+    }
+    
+    // MARK: - JSON Export Section
+    
+    private var jsonExportSection: some View {
+        VStack(spacing: 8) {
+            Divider()
+                .padding(.horizontal)
+            
+            HStack(spacing: 12) {
+                Button("Copy JSON", systemImage: "doc.on.clipboard") {
+                    copyResultToClipboard()
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Export JSON", systemImage: "square.and.arrow.up") {
+                    exportResultToFile()
+                }
+                .buttonStyle(.bordered)
+            }
+            .font(.subheadline)
+        }
+    }
+    
+    // MARK: - JSON Export Methods
+    
+    private func copyResultToClipboard() {
+        let jsonString = generateResultJSON()
+        
+        #if os(macOS)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(jsonString, forType: .string)
+        #endif
+        
+        // Visual feedback could be added here
+        print("📋 JSON結果をクリップボードにコピーしました")
+    }
+    
+    private func exportResultToFile() {
+        let jsonString = generateResultJSON()
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = dateFormatter.string(from: result.achievedAt)
+        
+        #if os(macOS)
+        let panel = NSSavePanel()
+        panel.title = "Export TimeAttack Result"
+        panel.nameFieldStringValue = "wordflow_v1.1_no-delete_timeattack_\(timestamp).json"
+        panel.allowedContentTypes = [.json]
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try jsonString.write(to: url, atomically: true, encoding: .utf8)
+                print("📁 JSON結果をファイルに保存しました: \(url.path)")
+            } catch {
+                print("❌ ファイル保存エラー: \(error)")
+            }
+        }
+        #endif
+    }
+    
+    private func generateResultJSON() -> String {
+        // 🔧 SANITY CHECKS: TimeAttack結果バリデーション
+        let netFormula = result.grossWPM * (result.finalAccuracy / 100.0)
+        let formulaDeviation = abs(result.netWPM - netFormula) / max(result.netWPM, 0.01)
+        let kspcExpected = result.totalKeystrokes > 0 && result.userInput.count > 0 ? Double(result.totalKeystrokes) / Double(result.userInput.count) : 1.0
+        let kspcDeviation = abs(result.kspc - kspcExpected) / max(result.kspc, 0.01)
+        
+        let formulaValid = formulaDeviation <= 0.03
+        let kspcValid = kspcDeviation <= 0.03
+        let durationValid = result.completionTime >= 10.0  // TimeAttackは短時間OK
+        
+        // 🔧 SCHEMA v1.1: TimeAttack結果JSONスキーマ
+        let jsonData: [String: Any] = [
+            "run_id": UUID().uuidString,
+            "ts": ISO8601DateFormatter().string(from: result.achievedAt),
+            "mode": "no-delete",  // TimeAttackは常にno-deleteモード
+            "experiment_mode": "time_attack",
+            "task_topic": result.task?.topic ?? "unknown",
+            "duration_sec": result.completionTime,
+            "chars_ref": result.task?.modelAnswer.count ?? result.userInput.count,
+            "chars_typed": result.userInput.count,
+            "unfixed_errors": result.unfixedErrors,
+            "gross_wpm": result.grossWPM,
+            "char_accuracy": result.finalAccuracy,
+            "net_wpm": result.netWPM,
+            "keystrokes_total": result.totalKeystrokes,
+            "backspace_count": result.correctionCost,
+            "kspc": result.kspc,
+            "backspace_rate": result.backspaceRate / 100.0,
+            "formula_valid": formulaValid,
+            "formula_deviation": formulaDeviation,
+            "app_version": "1.1",
+            "device_info": getDeviceInfo()
+        ]
+        
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: jsonData, options: .prettyPrinted)
+            return String(data: jsonData, encoding: .utf8) ?? "{}"
+        } catch {
+            print("❌ JSON生成エラー: \(error)")
+            return "{}"
+        }
+    }
+    
+    /// デバイス情報を取得
+    private func getDeviceInfo() -> String {
+        #if os(macOS)
+        let modelName = ProcessInfo.processInfo.machineHardwareName ?? "Unknown Mac"
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+        return "\(modelName) - \(osVersion)"
+        #else
+        return "Unknown Device"
+        #endif
     }
     
     // MARK: - Animation Methods

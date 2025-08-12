@@ -42,6 +42,9 @@ extension TypingTestManager {
     func endTimeAttack() -> TimeAttackResult? {
         guard isTimeAttackMode, let task = currentTask else { return nil }
         
+        // 🔧 FIX: まず最初にタイマーを停止して時計を止める
+        stopTimer()
+        
         // 完了時刻の記録
         let endTime = CFAbsoluteTimeGetCurrent()
         let actualCompletionTime = endTime - timeAttackStartTime
@@ -52,10 +55,10 @@ extension TypingTestManager {
         // 🔧 FIXED: Use proper scoring engine for consistent WPM calculations
         let scoringEngine = BasicScoringEngine()
         let scoringResult = scoringEngine.calculateScore(
-            userInput: userInput,
             targetText: task.modelAnswer,
+            userInput: userInput,
             elapsedTime: actualCompletionTime,
-            keystrokes: totalKeystrokes,
+            totalKeystrokes: totalKeystrokes,
             backspaceCount: correctionCost
         )
         
@@ -93,10 +96,15 @@ extension TypingTestManager {
     /// Time Attack 中断処理
     func abortTimeAttack() {
         guard isTimeAttackMode else { return }
+        
+        // 🔧 FIX: まず最初にタイマーを明示的に停止
+        stopTimer()
+        
         resetTimeAttackState()
         stopKeyboardMonitoring()
-        // 通常の停止処理を呼び出し
-        _ = endTest()
+        
+        // 🔧 FIX: 状態を確実にリセット
+        reset()
     }
     
     /// Time Attack 完了判定（入力更新時に呼ばれる）
@@ -110,6 +118,9 @@ extension TypingTestManager {
         if normalizedInput == normalizedTarget {
             isTimeAttackCompleted = true
             isTrackingKeyPresses = false
+            
+            // 🔧 FIX: 完了時に即座にタイマーを停止
+            stopTimer()
             
             // 自動終了（少し遅延を入れてユーザーに完了を実感させる）
             Task { @MainActor in
@@ -183,10 +194,10 @@ extension TypingTestManager {
         // 🎯 Use the same smart accuracy calculation as BasicScoringEngine
         let scoringEngine = BasicScoringEngine()
         let tempResult = scoringEngine.calculateScore(
-            userInput: userInput,
             targetText: task.modelAnswer,
+            userInput: userInput,
             elapsedTime: 1.0,  // Dummy time for accuracy calculation only
-            keystrokes: totalKeystrokes,
+            totalKeystrokes: totalKeystrokes,
             backspaceCount: correctionCost
         )
         
@@ -233,6 +244,10 @@ extension TypingTestManager {
         isTimeAttackCompleted = false
         isTrackingKeyPresses = false
         timeAttackStartTime = 0.0
+        
+        // 🔧 FIX: WPM履歴もリセット
+        timeAttackWpmHistory.removeAll()
+        timeAttackWpmVariation = 0.0
     }
     
     /// デバイス情報生成

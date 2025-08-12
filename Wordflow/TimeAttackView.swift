@@ -297,7 +297,7 @@ struct TimeAttackView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundColor(.red)
-                        Text("Corrections: \(timeAttackManager.currentCorrectionCost)")
+                        Text("Backspaces: \(timeAttackManager.currentCorrectionCost)")
                             .font(.caption)
                             .foregroundColor(.red)
                     }
@@ -505,7 +505,7 @@ struct TimeAttackView: View {
             if timeAttackManager.isActive {
                 StatRow(
                     icon: "gearshape.fill",
-                    title: "Corrections",
+                    title: "Backspaces",
                     value: "\(timeAttackManager.currentCorrectionCost)",
                     color: correctionColor
                 )

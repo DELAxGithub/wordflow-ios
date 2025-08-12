@@ -197,7 +197,7 @@ final class TimeAttackResultRepository: ObservableObject {
             averageTime: times.reduce(0, +) / Double(times.count),
             bestAccuracy: accuracies.max()!,
             averageAccuracy: accuracies.reduce(0, +) / Double(accuracies.count),
-            averageCorrections: Double(corrections.reduce(0, +)) / Double(corrections.count),
+            averageBackspaces: Double(corrections.reduce(0, +)) / Double(corrections.count),
             personalBestCount: results.filter { $0.isPersonalBest }.count,
             totalBadges: results.flatMap { $0.badges }.count,
             lastAttempt: results.first?.achievedAt
@@ -275,14 +275,14 @@ struct TimeAttackStatistics {
     let averageTime: TimeInterval
     let bestAccuracy: Double
     let averageAccuracy: Double
-    let averageCorrections: Double
+    let averageBackspaces: Double
     let personalBestCount: Int
     let totalBadges: Int
     let lastAttempt: Date?
     
     static let empty = TimeAttackStatistics(
         attemptCount: 0, bestTime: 0, worstTime: 0, averageTime: 0,
-        bestAccuracy: 0, averageAccuracy: 0, averageCorrections: 0,
+        bestAccuracy: 0, averageAccuracy: 0, averageBackspaces: 0,
         personalBestCount: 0, totalBadges: 0, lastAttempt: nil
     )
 }

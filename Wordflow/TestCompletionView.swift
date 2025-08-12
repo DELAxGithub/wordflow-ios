@@ -4,11 +4,13 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct TestCompletionView: View {
     let result: TypingResult
     let timerMode: TimerMode
     let resultRepository: TypingResultRepository?
+    let testManager: TypingTestManager // 🔧 FIX: Add testManager to access personal bests
     let onRetry: () -> Void
     let onNewTask: () -> Void
     let onClose: () -> Void
@@ -16,6 +18,7 @@ struct TestCompletionView: View {
     // 前回記録とベスト記録
     @State private var previousResult: TypingResult?
     @State private var bestResult: TypingResult?
+    @State private var personalBest: TypingTestManager.PersonalBest? // 🔧 FIX: Add personal best from test manager
     
     var body: some View {
         VStack(spacing: 24) {
@@ -75,12 +78,30 @@ struct TestCompletionView: View {
             .background(Color(NSColor.controlBackgroundColor))
             .cornerRadius(12)
             
-            // 前回記録とベスト記録セクション
-            if previousResult != nil || bestResult != nil {
+            // 前回記録とベスト記録セクション（🔧 FIX: Include personal best from test manager）
+            if previousResult != nil || bestResult != nil || personalBest != nil {
                 VStack(spacing: 16) {
-                    Text("Today's Records")
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                    HStack {
+                        Text("Records")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        // 🏆 NEW PERSONAL BEST indicator
+                        if testManager.isPersonalBest {
+                            HStack(spacing: 4) {
+                                Image(systemName: "crown.fill")
+                                    .foregroundColor(.orange)
+                                Text("NEW BEST!")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.orange)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                    }
                     
                     HStack(spacing: 20) {
                         // 前回記録
@@ -109,10 +130,36 @@ struct TestCompletionView: View {
                             }
                         }
                         
-                        // ベスト記録
-                        if let best = bestResult {
+                        // 🔧 FIX: Personal Best from TestManager (more reliable)
+                        if let personalBest = personalBest {
                             VStack(spacing: 8) {
-                                Text("Today's Best")
+                                Text("Personal Best")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                HStack(spacing: 15) {
+                                    ComparisonMetricView(
+                                        title: "WPM",
+                                        current: result.netWPM,
+                                        previous: personalBest.netWPM,
+                                        icon: "crown.fill",
+                                        isBest: true
+                                    )
+                                    
+                                    ComparisonMetricView(
+                                        title: "Accuracy",
+                                        current: result.accuracy,
+                                        previous: personalBest.accuracy,
+                                        icon: "star.fill",
+                                        isPercentage: true,
+                                        isBest: true
+                                    )
+                                }
+                            }
+                        } else if let best = bestResult {
+                            // Fallback to repository best if personal best not available
+                            VStack(spacing: 8) {
+                                Text("Best Record")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                 
@@ -195,24 +242,61 @@ struct TestCompletionView: View {
             .cornerRadius(12)
             
             // Action Buttons
-            HStack(spacing: 12) {
-                Button("Try Again (⌘R)", systemImage: "arrow.clockwise") {
-                    onRetry()
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    Button("Try Again (⌘R)", systemImage: "arrow.clockwise") {
+                        onRetry()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    
+                    Button("New Task", systemImage: "doc.text") {
+                        onNewTask()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    
+                    Button("Close", systemImage: "xmark") {
+                        onClose()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
                 
-                Button("New Task", systemImage: "doc.text") {
-                    onNewTask()
+                // JSON Telemetry Buttons - Enhanced visibility
+                VStack(spacing: 8) {
+                    Divider()
+                    
+                    Text("JSON Telemetry Export")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 12) {
+                        Button("📊 Export JSON Data", systemImage: "doc.text.fill") {
+                            exportCurrentResult()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                        .help("Export this test result as JSON telemetry data")
+                        
+                        Button("📁 Open Telemetry Folder", systemImage: "folder.fill") {
+                            openTelemetryFolder()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                        .help("Open the folder containing all JSON typing metrics")
+                    }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
                 
-                Button("Close", systemImage: "xmark") {
-                    onClose()
+                // Version Info - Bottom right corner
+                HStack {
+                    Spacer()
+                    Text("Wordflow v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .opacity(0.7)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                .padding(.top, 8)
             }
         }
         .padding(32)
@@ -247,8 +331,11 @@ struct TestCompletionView: View {
         // 前回記録を取得
         previousResult = repository.getPreviousResultForTimerMode(timerMode, excluding: result)
         
-        // ベスト記録を取得
+        // ベスト記録を取得（repositoryから）
         bestResult = repository.getBestResultForTimerMode(timerMode)
+        
+        // 🔧 FIX: Get personal best from test manager (more reliable and up-to-date)
+        personalBest = testManager.getPersonalBest(for: timerMode)
     }
     
     private func getHighlightedText() -> AttributedString {
@@ -282,6 +369,149 @@ struct TestCompletionView: View {
         } else {
             return "Total Errors: \(result.basicErrorCount)"
         }
+    }
+    
+    // MARK: - Telemetry Methods
+    
+    /// Open the telemetry folder in Finder
+    private func openTelemetryFolder() {
+        let fileManager = FileManager.default
+        
+        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            print("⚠️ Could not access Documents directory")
+            showTelemetryAlert(message: "Could not access Documents directory")
+            return
+        }
+        
+        let telemetryURL = documentsURL.appendingPathComponent("WordflowTelemetry")
+        
+        // Create directory if it doesn't exist
+        if !fileManager.fileExists(atPath: telemetryURL.path) {
+            do {
+                try fileManager.createDirectory(at: telemetryURL, withIntermediateDirectories: true)
+                print("📁 Created telemetry directory: \(telemetryURL.path)")
+            } catch {
+                print("⚠️ Failed to create telemetry directory: \(error)")
+                showTelemetryAlert(message: "Could not create telemetry directory")
+                return
+            }
+        }
+        
+        // Open in Finder
+        NSWorkspace.shared.open(telemetryURL)
+        print("📂 Opened telemetry folder: \(telemetryURL.path)")
+    }
+    
+    /// Export current result as JSON telemetry
+    private func exportCurrentResult() {
+        // Create telemetry JSON for this specific result
+        let taskType = result.task?.taskType.rawValue ?? "unknown"
+        let taskTopic = result.task?.topic ?? "unknown"
+        
+        // 🔧 SANITY CHECKS: 完了結果バリデーション
+        let netFormula = result.grossWPM * (result.accuracy / 100.0)
+        let formulaDeviation = abs(result.netWPM - netFormula) / max(result.netWPM, 0.01)
+        let formulaValid = formulaDeviation <= 0.03
+        let durationValid = result.testDuration >= 10.0  // 完了済みは緩い基準
+        
+        if !formulaValid {
+            showTelemetryAlert(message: "🚨 数式バリデーション失敗\n\nGross×Accuracy≠Net WPMの整合性エラー\n偏差: \(String(format: "%.3f", formulaDeviation))")
+            return
+        }
+        
+        // 🔧 SCHEMA v1.1: 完了結果用JSONスキーマ
+        let telemetryData: [String: Any] = [
+            "run_id": UUID().uuidString,
+            "ts": ISO8601DateFormatter().string(from: Date()),
+            "mode": "normal",  // TestCompletionは通常normalモード
+            "experiment_mode": "standard",
+            "task_topic": taskTopic,
+            "duration_sec": result.testDuration,
+            "chars_ref": result.targetText.count,
+            "chars_typed": result.userInput.count,
+            "unfixed_errors": result.basicErrorCount,
+            "gross_wpm": result.grossWPM,
+            "char_accuracy": result.accuracy,
+            "net_wpm": result.netWPM,
+            "keystrokes_total": 0,  // TypingResult doesn't track keystrokes
+            "backspace_count": 0,   // TypingResult doesn't track backspaces
+            "kspc": 1.0,            // TypingResult doesn't track KSPC
+            "backspace_rate": 0.0,  // TypingResult doesn't track backspace rate
+            "formula_valid": formulaValid,
+            "formula_deviation": formulaDeviation,
+            "app_version": "1.1",
+            "device_info": getDeviceInfo()
+        ]
+        
+        // Convert to JSON and save
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: telemetryData, options: .prettyPrinted)
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                saveCompletedResultToFile(jsonString)
+            }
+        } catch {
+            print("⚠️ Failed to create result telemetry JSON: \(error)")
+            showTelemetryAlert(message: "Failed to create telemetry data: \(error.localizedDescription)")
+        }
+    }
+    
+    private func saveCompletedResultToFile(_ jsonString: String) {
+        let fileManager = FileManager.default
+        
+        // Get Documents directory
+        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            print("⚠️ Could not access Documents directory")
+            showTelemetryAlert(message: "Could not access Documents directory")
+            return
+        }
+        
+        // Create WordflowTelemetry directory
+        let telemetryURL = documentsURL.appendingPathComponent("WordflowTelemetry")
+        
+        do {
+            if !fileManager.fileExists(atPath: telemetryURL.path) {
+                try fileManager.createDirectory(at: telemetryURL, withIntermediateDirectories: true)
+            }
+            
+            // Create filename with timestamp and task info
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
+            // タスク情報は不要（ファイル名に統一命名を使用）
+            let filename = "wordflow_v1.1_normal_completed_\(formatter.string(from: Date())).json"
+            let fileURL = telemetryURL.appendingPathComponent(filename)
+            
+            // Write JSON to file
+            try jsonString.write(to: fileURL, atomically: true, encoding: .utf8)
+            print("📁 Completed result telemetry saved: \(fileURL.path)")
+            
+            // Show success
+            showTelemetryAlert(message: "JSON telemetry for this result exported successfully!\n\nFile: \(filename)\nLocation: ~/Documents/WordflowTelemetry/\n\nNet WPM: \(String(format: "%.1f", result.netWPM))\nAccuracy: \(String(format: "%.1f%%", result.accuracy))")
+            
+        } catch {
+            print("⚠️ Failed to save result telemetry file: \(error)")
+            showTelemetryAlert(message: "Failed to save telemetry file: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Show alert with telemetry information
+    private func showTelemetryAlert(message: String) {
+        let alert = NSAlert()
+        alert.messageText = "JSON Telemetry"
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    
+    /// デバイス情報を取得
+    private func getDeviceInfo() -> String {
+        #if os(macOS)
+        let modelName = ProcessInfo.processInfo.machineHardwareName ?? "Unknown Mac"
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+        return "\(modelName) - \(osVersion)"
+        #else
+        return "Unknown Device"
+        #endif
     }
 }
 
@@ -334,6 +564,7 @@ struct ResultMetricView: View {
             ),
             timerMode: .exam,
             resultRepository: nil,
+            testManager: TypingTestManager(), // 🔧 FIX: Add test manager for preview
             onRetry: {},
             onNewTask: {},
             onClose: {}

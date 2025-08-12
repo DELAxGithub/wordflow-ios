@@ -85,6 +85,7 @@ struct BasicTypingPracticeView: View {
                     result: result,
                     timerMode: testManager.timerMode,
                     resultRepository: resultRepository,
+                    testManager: testManager, // 🔧 FIX: Pass test manager for personal best access
                     onRetry: {
                         showingCompletionModal = false
                         retryTest()
@@ -184,9 +185,19 @@ struct BasicTypingPracticeView: View {
     
     private var headerView: some View {
         HStack {
-            Text("タイピング練習")
-                .font(.title2)
-                .fontWeight(.semibold)
+            HStack(spacing: 8) {
+                Text("タイピングプロジェクト")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                Text("v1.1")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(4)
+            }
             
             Spacer()
             
@@ -227,6 +238,13 @@ struct BasicTypingPracticeView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(userInput.isEmpty || selectedTask == nil)
+                
+                Button("📊 JSON Telemetry", systemImage: "doc.text.fill") {
+                    exportCurrentTelemetry()
+                }
+                .buttonStyle(.bordered)
+                .disabled(selectedTask == nil)
+                .help("Export current typing session telemetry as JSON")
                 
                 Toggle(isOn: $autoPlayAudio) {
                     HStack(spacing: 4) {
@@ -485,6 +503,56 @@ struct BasicTypingPracticeView: View {
                         color: consistencyColor
                     )
                 }
+                
+                // 🚨 ENHANCED SANITY CHECK: 3つの必須検証表示
+                if testManager.isActive && !userInput.isEmpty {
+                    VStack(spacing: 2) {
+                        Text("Validation")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        VStack(spacing: 1) {
+                            // Net WPM formula validation
+                            let netFormula = testManager.currentScore.grossWPM * (testManager.currentScore.accuracy / 100.0)
+                            let formulaDeviation = abs(testManager.currentScore.netWPM - netFormula) / max(testManager.currentScore.netWPM, 0.01)
+                            let netValid = formulaDeviation <= 0.03
+                            
+                            HStack(spacing: 2) {
+                                Image(systemName: netValid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(netValid ? .green : .red)
+                                Text("Formula")
+                                    .font(.caption2)
+                                    .foregroundColor(netValid ? .green : .red)
+                            }
+                            
+                            // KSPC validation
+                            let kspcExpected = userInput.count > 0 ? Double(testManager.totalKeystrokes) / Double(userInput.count) : 1.0
+                            let kspcDeviation = abs(testManager.currentScore.kspc - kspcExpected) / max(testManager.currentScore.kspc, 0.01)
+                            let kspcValid = kspcDeviation <= 0.03
+                            
+                            HStack(spacing: 2) {
+                                Image(systemName: kspcValid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(kspcValid ? .green : .red)
+                                Text("KSPC")
+                                    .font(.caption2)
+                                    .foregroundColor(kspcValid ? .green : .red)
+                            }
+                            
+                            // Duration validation
+                            let durationValid = testManager.elapsedTime >= 60.0
+                            HStack(spacing: 2) {
+                                Image(systemName: durationValid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(durationValid ? .green : .red)
+                                Text("Time")
+                                    .font(.caption2)
+                                    .foregroundColor(durationValid ? .green : .red)
+                            }
+                        }
+                    }
+                }
             }
         }
         .padding()
@@ -556,6 +624,15 @@ struct BasicTypingPracticeView: View {
         return "No record"
     }
     
+    
+    // MARK: - Computed Properties
+    
+    // Safe sanity check computation
+    private var isSanityCheckValid: Bool {
+        guard testManager.isActive, !userInput.isEmpty else { return true }
+        return testManager.currentScore.isFormulaValid
+    }
+    
     // MARK: - Methods
     
     private func setupRepositories() {
@@ -565,19 +642,18 @@ struct BasicTypingPracticeView: View {
     
     private func setupTestManager() {
         testManager.onTimeUp = {
-            Task { @MainActor in
-                // Stop TTS when time is up
-                self.ttsManager.stop()
+            // 🔧 IMMEDIATE FIX: Stop TTS and process result immediately
+            self.ttsManager.stop()
+            
+            // 既に結果表示中の場合は何もしない（重複防止）
+            guard !self.showingCompletionModal else { return }
+            
+            if let result = self.testManager.endTest() {
+                self.completionResult = result
+                self.resultRepository?.saveResult(result)
                 
-                // 2秒間の余白を追加
-                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2秒
-                
-                // 既に結果表示中の場合は何もしない（重複防止）
-                guard !self.showingCompletionModal else { return }
-                
-                if let result = self.testManager.endTest() {
-                    self.completionResult = result
-                    self.resultRepository?.saveResult(result)
+                // 🔧 FIX: Use shorter delay and ensure UI update on main thread
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self.showingCompletionModal = true
                 }
             }
@@ -757,6 +833,134 @@ struct BasicTypingPracticeView: View {
     private func selectAllTargetText() {
         // Provide visual feedback for text selection
         NSSound(named: "Tink")?.play()
+    }
+    
+    // MARK: - Telemetry Export Methods
+    
+    private func exportCurrentTelemetry() {
+        guard let task = selectedTask else { return }
+        
+        // Get current metrics from testManager
+        let elapsedTime = testManager.isActive ? testManager.elapsedTime : max(1.0, testManager.elapsedTime)
+        let currentInput = userInput
+        
+        // Force calculate current scoring if test is active
+        if testManager.isActive {
+            testManager.updateInput(currentInput)
+        }
+        
+        let score = testManager.currentScore
+        
+        // 🔧 SANITY CHECKS: マニュアルエクスポート前バリデーション
+        let netFormula = score.grossWPM * (score.accuracy / 100.0)
+        let formulaDeviation = abs(score.netWPM - netFormula) / max(score.netWPM, 0.01)
+        let kspcExpected = currentInput.count > 0 ? Double(testManager.totalKeystrokes) / Double(currentInput.count) : 1.0
+        let kspcDeviation = abs(score.kspc - kspcExpected) / max(score.kspc, 0.01)
+        
+        let formulaValid = formulaDeviation <= 0.03
+        let kspcValid = kspcDeviation <= 0.03
+        let durationValid = elapsedTime >= 10.0  // マニュアルは緩い基準
+        
+        if !formulaValid || !kspcValid {
+            showTelemetryAlert(message: "🚨 バリデーション失敗 - エクスポート禁止\n\n数式チェック: \(formulaValid ? "✅" : "❌")\nKSPCチェック: \(kspcValid ? "✅" : "❌")\n\nデータ整合性に問題があります。")
+            return
+        }
+        
+        // 🔧 SCHEMA v1.1: マニュアルエクスポート用JSONスキーマ
+        let telemetryData: [String: Any] = [
+            "run_id": UUID().uuidString,
+            "ts": ISO8601DateFormatter().string(from: Date()),
+            "mode": testManager.isTimeAttackMode ? "no-delete" : "normal",
+            "experiment_mode": testManager.isTimeAttackMode ? "time_attack" : "standard",
+            "task_topic": task.topic,
+            "duration_sec": elapsedTime,
+            "chars_ref": task.modelAnswer.count,
+            "chars_typed": currentInput.count,
+            "unfixed_errors": score.unfixedErrors,
+            "gross_wpm": score.grossWPM,
+            "char_accuracy": score.accuracy,
+            "net_wpm": score.netWPM,
+            "keystrokes_total": testManager.totalKeystrokes,
+            "backspace_count": testManager.correctionCost,
+            "kspc": score.kspc,
+            "backspace_rate": score.backspaceRate / 100.0,
+            "formula_valid": formulaValid,
+            "formula_deviation": formulaDeviation,
+            "app_version": "1.1",
+            "device_info": getDeviceInfo()
+        ]
+        
+        // Convert to JSON and save
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: telemetryData, options: .prettyPrinted)
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                saveCurrentTelemetryToFile(jsonString, task: task)
+            }
+        } catch {
+            print("⚠️ Failed to create telemetry JSON: \(error)")
+            showTelemetryAlert(message: "Failed to create telemetry data: \(error.localizedDescription)")
+        }
+    }
+    
+    private func saveCurrentTelemetryToFile(_ jsonString: String, task: IELTSTask) {
+        let fileManager = FileManager.default
+        
+        // Get Documents directory
+        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            print("⚠️ Could not access Documents directory")
+            showTelemetryAlert(message: "Could not access Documents directory")
+            return
+        }
+        
+        // Create WordflowTelemetry directory
+        let telemetryURL = documentsURL.appendingPathComponent("WordflowTelemetry")
+        
+        do {
+            if !fileManager.fileExists(atPath: telemetryURL.path) {
+                try fileManager.createDirectory(at: telemetryURL, withIntermediateDirectories: true)
+            }
+            
+            // Create filename with timestamp and task info
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
+            let mode = testManager.isTimeAttackMode ? "no-delete" : "normal"
+            let filename = "wordflow_v1.1_\(mode)_manual_\(formatter.string(from: Date())).json"
+            let fileURL = telemetryURL.appendingPathComponent(filename)
+            
+            // Write JSON to file
+            try jsonString.write(to: fileURL, atomically: true, encoding: .utf8)
+            print("📁 Manual telemetry saved: \(fileURL.path)")
+            
+            // Show success and open folder
+            showTelemetryAlert(message: "JSON telemetry exported successfully!\n\nFile: \(filename)\nLocation: ~/Documents/WordflowTelemetry/")
+            
+            // Automatically open the telemetry folder
+            NSWorkspace.shared.open(telemetryURL)
+            
+        } catch {
+            print("⚠️ Failed to save telemetry file: \(error)")
+            showTelemetryAlert(message: "Failed to save telemetry file: \(error.localizedDescription)")
+        }
+    }
+    
+    private func showTelemetryAlert(message: String) {
+        let alert = NSAlert()
+        alert.messageText = "JSON Telemetry Export"
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    
+    /// デバイス情報を取得
+    private func getDeviceInfo() -> String {
+        #if os(macOS)
+        let modelName = ProcessInfo.processInfo.machineHardwareName ?? "Unknown Mac"
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+        return "\(modelName) - \(osVersion)"
+        #else
+        return "Unknown Device"
+        #endif
     }
     
     // MARK: - Error Analysis Methods

@@ -76,7 +76,7 @@ final class TypingResult {
         self.finalWPM = scoringResult.netWPM
         self.accuracy = scoringResult.accuracy
         self.completionPercentage = scoringResult.completionPercentage
-        self.basicErrorCount = scoringResult.basicErrorCount
+        self.basicErrorCount = scoringResult.totalErrors
         
         // Phase A: New scoring fields
         self.grossWPM = scoringResult.grossWPM

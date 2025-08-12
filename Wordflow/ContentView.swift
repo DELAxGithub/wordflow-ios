@@ -68,7 +68,7 @@ struct ContentView: View {
                 Image(systemName: "keyboard")
                     .font(.title2)
                     .foregroundColor(.blue)
-                Text("タイピングプロジェクト")
+                Text("タイピングプロジェクト v1.1")
                     .font(.title2)
                     .fontWeight(.semibold)
             }

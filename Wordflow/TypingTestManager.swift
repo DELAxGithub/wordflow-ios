@@ -52,103 +52,90 @@ enum TimerMode: Codable, Identifiable, CaseIterable, Hashable {
             let minutes = Int(duration) / 60
             let seconds = Int(duration) % 60
             if minutes > 0 {
-                return "\(minutes)分\(seconds > 0 ? "\(seconds)秒" : "")"
+                return "\(minutes)分"
             } else {
                 return "\(seconds)秒"
             }
         }
     }
     
-    // CaseIterable対応（デフォルトの練習モードオプション）
     static var allCases: [TimerMode] {
         return [
-            .practice(10),   // 10秒 - デフォルト
-            .practice(30),   // 30秒
-            .practice(60),   // 1分
-            .practice(90),   // 1分30秒
-            .exam,           // 試験モード (2分)
-            .practice(180),  // 3分
-            .practice(300)   // 5分
+            .exam,
+            .practice(10),  // 10秒
+            .practice(30),  // 30秒
+            .practice(60),  // 1分
+            .practice(180), // 3分
+            .practice(300), // 5分
+            .practice(600)  // 10分
         ]
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    static func == (lhs: TimerMode, rhs: TimerMode) -> Bool {
+        return lhs.id == rhs.id
     }
 }
 
-// MARK: - Scoring Result (Phase A)
+// MARK: - Scoring Result (Phase A) 
 struct ScoringResult {
-    let grossWPM: Double        // (総打鍵文字数/5) ÷ 分
-    let netWPM: Double          // grossWPM × (accuracy ÷ 100)
-    let accuracy: Double        // Smart hybrid accuracy (word + character level)
-    let qualityScore: Double    // Net WPM × Accuracy ÷ 100
-    let errorBreakdown: [String: Int] // Simplified for now
+    let grossWPM: Double
+    let netWPM: Double
+    let accuracy: Double
+    let qualityScore: Double // New in Phase A
+    let errorBreakdown: [String: Int]
     let matchedWords: Int
     let totalWords: Int
     let totalErrors: Int
     let errorRate: Double
     let completionPercentage: Double
-    
-    // Enhanced metrics (Issue #31)
-    let kspc: Double           // 総打鍵キー数 ÷ 原文文字数 (Keystrokes Per Character)
-    let backspaceRate: Double  // Backspace回数 ÷ 総打鍵キー数
-    let totalKeystrokes: Int   // 総打鍵キー数
-    let backspaceCount: Int    // Backspace使用回数
-    
-    // 🔧 FIXED: Unfixed error metrics for proper Net WPM calculation
-    let unfixedErrors: Int     // 未修正エラー数
-    let unfixedErrorRate: Double // 未修正エラー率 (%)
-    
-    // 🔧 NEW: Smart accuracy breakdown metrics
-    let wordAccuracy: Double   // 単語レベル正確性 (%)
-    let charAccuracy: Double   // 文字レベル正確性（編集距離ベース） (%)
-    let hybridAccuracy: Double // ハイブリッド正確性（総合） (%)
-    
-    // 🚨 CRITICAL: Formula validation flag
-    let isFormulaValid: Bool   // Net WPM = Gross WPM × Accuracy validation
-    let formulaDeviation: Double // Deviation percentage for debugging
-    
-    // Legacy compatibility
-    var characterAccuracy: Double { hybridAccuracy } // Use hybrid accuracy as main accuracy
-    var basicErrorCount: Int { totalErrors }
+    let kspc: Double
+    let backspaceRate: Double
+    let totalKeystrokes: Int
+    let backspaceCount: Int
+    let unfixedErrors: Int
+    let unfixedErrorRate: Double
+    let wordAccuracy: Double
+    let charAccuracy: Double
+    let hybridAccuracy: Double
+    let isFormulaValid: Bool
+    let formulaDeviation: Double
 }
 
-// MARK: - Smart Accuracy Metrics
-struct SmartAccuracyMetrics {
-    let word: Double      // Word-level accuracy
-    let character: Double // Character-level accuracy (edit distance)
-    let hybrid: Double    // Combined accuracy
-}
+// MARK: - Alignment Operations
 
-// MARK: - Global Alignment Support Structures
-struct WordAnchor {
-    let inputIndex: Int
-    let targetIndex: Int
-    let word: String
+struct AlignmentOperation {
+    enum OpType {
+        case match
+        case substitute
+        case insert
+        case delete
+    }
+    
+    let type: OpType
+    let targetPos: Int
+    let inputPos: Int
+    let targetChar: Character?
+    let inputChar: Character?
 }
 
 struct AlignmentResult {
     let operations: [AlignmentOperation]
-    let errorBlocks: [ErrorBlock]
-    let unfixedErrors: Int
+    let accuracy: Double
+    let totalOperations: Int
+    let matchCount: Int
+    let errorCount: Int
 }
 
-struct AlignmentOperation {
-    let type: OperationType
-    let inputChar: Character?
-    let targetChar: Character?
-    let position: Int
-    
-    enum OperationType {
-        case match      // Correct character
-        case substitute // Wrong character
-        case insert     // Extra character in input
-        case delete     // Missing character from target
-    }
-}
+// MARK: - Error Tracking
 
 struct ErrorBlock {
     let startPosition: Int
     let length: Int
     let operations: Int
-    let type: ErrorBlockType
     
     enum ErrorBlockType {
         case substitution
@@ -156,11 +143,8 @@ struct ErrorBlock {
         case deletion
         case mixed
     }
-}
-
-enum NormalizationMode {
-    case strict     // IELTS strict mode
-    case flexible   // Allow some flexibility
+    
+    let type: ErrorBlockType
 }
 
 // MARK: - Basic Scoring Engine (Phase A)
@@ -168,598 +152,330 @@ class BasicScoringEngine {
     // 🔧 CRASH FIX: Safe default result for error cases
     private func createDefaultScoringResult() -> ScoringResult {
         return ScoringResult(
-            grossWPM: 0.0, netWPM: 0.0, accuracy: 0.0, qualityScore: 0.0,
+            grossWPM: 0, netWPM: 0, accuracy: 100, qualityScore: 0,
             errorBreakdown: [:], matchedWords: 0, totalWords: 0,
-            totalErrors: 0, errorRate: 0.0, completionPercentage: 0.0,
-            kspc: 1.0, backspaceRate: 0.0, totalKeystrokes: 0, backspaceCount: 0,
+            totalErrors: 0, errorRate: 0, completionPercentage: 0,
+            kspc: 1.0, backspaceRate: 0, totalKeystrokes: 0, backspaceCount: 0,
             unfixedErrors: 0, unfixedErrorRate: 0.0,
-            wordAccuracy: 0.0, charAccuracy: 0.0, hybridAccuracy: 0.0,
-            isFormulaValid: false, formulaDeviation: 0.0
+            wordAccuracy: 100.0, charAccuracy: 100.0, hybridAccuracy: 100.0,
+            isFormulaValid: true, formulaDeviation: 0.0
         )
     }
     
-    func calculateScore(userInput: String, targetText: String, elapsedTime: TimeInterval, keystrokes: Int = 0, backspaceCount: Int = 0) -> ScoringResult {
-        // 🔧 CRASH FIX: Safe parameter validation
-        guard elapsedTime > 0, !targetText.isEmpty else {
-            print("⚠️ Warning: Invalid parameters for scoring calculation")
+    /// Core scoring method with comprehensive metrics
+    func calculateScore(
+        targetText: String,
+        userInput: String,
+        elapsedTime: TimeInterval,
+        totalKeystrokes: Int,
+        backspaceCount: Int
+    ) -> ScoringResult {
+        // Prevent crashes with empty inputs
+        guard !targetText.isEmpty, !userInput.isEmpty, elapsedTime > 0 else {
             return createDefaultScoringResult()
         }
         
-        let elapsedMinutes = max(0.001, elapsedTime / 60.0)
-        
-        // 🎯 OFFICIAL SPECIFICATION: Fixed formula implementation
-        let typedText = userInput
-        let referenceText = targetText
-        let outputChars = Double(typedText.count)
-        
-        // 🔧 CRASH FIX: Calculate Levenshtein distance safely with bounds checking
-        let unfixedErrors: Double
-        if typedText.count > 10000 || referenceText.count > 10000 {
-            print("⚠️ Warning: Text too long for precise calculation, using approximation")
-            unfixedErrors = max(0.0, abs(Double(typedText.count) - Double(referenceText.count)))
-        } else {
-            unfixedErrors = Double(levenshteinDistance(typedText, referenceText))
-        }
-        
-        // Gross WPM = (output_chars / 5) / minutes
-        let grossWPM = (outputChars / 5.0) / elapsedMinutes
-        
-        // Accuracy = max(0, 100 * (output_chars - unfixed_errors) / output_chars)
-        let accuracy = outputChars > 0 ? max(0.0, 100.0 * (outputChars - unfixedErrors) / outputChars) : 0.0
-        
-        // Net WPM = gross_wpm * (accuracy_pct / 100)
-        let netWPM = grossWPM * (accuracy / 100.0)
-        
-        // 🎯 OFFICIAL SPECIFICATION: Additional calculations
-        
-        // KSPC = keystrokes_total / output_chars (must be ≥ 1.0)
-        let kspc = outputChars > 0 ? max(1.0, Double(keystrokes) / outputChars) : 1.0
-        
-        // Backspace rate = backspace_count / keystrokes_total (must be ≤ 0.25)
-        let backspaceRate = keystrokes > 0 ? min(25.0, Double(backspaceCount) / Double(keystrokes) * 100.0) : 0.0
-        
-        // Quality Score = Net WPM × Accuracy ÷ 100
-        let qualityScore = netWPM * accuracy / 100.0
-        
-        // Completion percentage (separate from accuracy)
-        let userWords = tokenizeWords(userInput)
-        let targetWords = tokenizeWords(targetText)
-        let completionPercentage = targetWords.count > 0 ? 
-            min(100.0, Double(userWords.count) / Double(targetWords.count) * 100.0) : 0.0
-        
-        // 🚨 SANITY CHECK: Critical formula validation
-        let expectedNetWPM = grossWPM * (accuracy / 100.0)
-        let netWPMDeviation = expectedNetWPM > 0 ? abs(netWPM - expectedNetWPM) / expectedNetWPM : 0.0
-        let netWPMValid = netWPMDeviation <= 0.03
-        
-        // 🔧 SANITY CHECK: KSPC formula validation
-        let expectedKSPC = outputChars > 0 ? Double(keystrokes) / outputChars : 1.0
-        let kspcDeviation = expectedKSPC > 0 ? abs(kspc - expectedKSPC) / expectedKSPC : 0.0
-        let kspcValid = kspcDeviation <= 0.03
-        
-        let isFormulaValid = netWPMValid && kspcValid
-        
-        // Ensure accuracy bounds: 0 ≤ accuracy ≤ 100
-        let clampedAccuracy = max(0.0, min(100.0, accuracy))
-        
-        // 🚨 OFFICIAL SPECIFICATION: Debug validation output
-        #if DEBUG
-        print("🎯 OFFICIAL FORMULA VALIDATION:")
-        print("   Duration: \(String(format: "%.2f", elapsedTime))s = \(String(format: "%.4f", elapsedMinutes))min")
-        print("   Output chars: \(Int(outputChars)), Reference chars: \(referenceText.count)")
-        print("   Unfixed errors (Levenshtein): \(Int(unfixedErrors))")
-        print("   Gross WPM: \(String(format: "%.1f", grossWPM)) = (\(Int(outputChars))/5)/\(String(format: "%.4f", elapsedMinutes))")
-        print("   Accuracy: \(String(format: "%.1f", clampedAccuracy))% = max(0, 100*(\(Int(outputChars))-\(Int(unfixedErrors)))/\(Int(outputChars)))")
-        print("   Net WPM: \(String(format: "%.1f", netWPM)) = \(String(format: "%.1f", grossWPM)) × \(String(format: "%.3f", clampedAccuracy/100.0))")
-        print("   🔧 KSPC DEBUG: \(String(format: "%.2f", kspc)) = \(keystrokes)/\(Int(outputChars)) (keystrokes/OUTPUT_CHARS)")
-        print("   🔧 KSPC SHOULD BE: \(keystrokes > 0 && outputChars > 0 ? String(format: "%.2f", Double(keystrokes)/outputChars) : "N/A")")
-        print("   Backspace rate: \(String(format: "%.1f", backspaceRate))% = \(backspaceCount)/\(keystrokes)")
-        
-        // 🚨 SANITY CHECK RESULTS
-        print("   🔍 SANITY CHECKS:")
-        print("     Net WPM: \(netWPMValid ? "✅" : "🚨") deviation \(String(format: "%.1f%%", netWPMDeviation * 100)) \(netWPMValid ? "≤" : ">") 3%")
-        print("     KSPC: \(kspcValid ? "✅" : "🚨") deviation \(String(format: "%.1f%%", kspcDeviation * 100)) \(kspcValid ? "≤" : ">") 3%")
-        print("     Overall: \(isFormulaValid ? "✅ PASSED" : "🚨 FAILED")")
-        
-        if !isFormulaValid {
-            print("   ⚠️ CRITICAL: Sanity check failed - calculations may be incorrect!")
-        }
-        
-        // 🔧 JSON TELEMETRY LOGGING
-        logTelemetryData(
-            mode: "time_attack",
-            sourceId: "unknown",
-            charsRef: referenceText.count,
-            charsTyped: Int(outputChars),
-            keystrokesTotal: keystrokes,
-            backspaceCount: backspaceCount,
-            unfixedErrors: Int(unfixedErrors),
-            durationSec: elapsedTime,
-            grossWPM: grossWPM,
-            netWPM: netWPM,
-            accuracy: clampedAccuracy,
-            kspc: kspc,
-            isFormulaValid: isFormulaValid,
-            netWPMDeviation: netWPMDeviation,
-            kspcDeviation: kspcDeviation
-        )
-        #endif
-        
-        return ScoringResult(
-            grossWPM: grossWPM,
-            netWPM: netWPM,
-            accuracy: clampedAccuracy,  // Use clamped accuracy
-            qualityScore: qualityScore,
-            errorBreakdown: [:],
-            matchedWords: Int((outputChars - unfixedErrors) / 5.0), // Correct characters as words
-            totalWords: targetWords.count,
-            totalErrors: Int(unfixedErrors), // Unfixed errors count
-            errorRate: unfixedErrors > 0 ? (unfixedErrors / outputChars * 100.0) : 0.0,
-            completionPercentage: completionPercentage,
-            kspc: kspc,
-            backspaceRate: backspaceRate,
-            totalKeystrokes: keystrokes,
-            backspaceCount: backspaceCount,
-            unfixedErrors: Int(unfixedErrors),
-            unfixedErrorRate: unfixedErrors > 0 ? (unfixedErrors / outputChars * 100.0) : 0.0,
-            wordAccuracy: clampedAccuracy,     // Simplified - use same accuracy
-            charAccuracy: clampedAccuracy,     // Simplified - use same accuracy
-            hybridAccuracy: clampedAccuracy,   // Simplified - use same accuracy
-            isFormulaValid: isFormulaValid,
-            formulaDeviation: netWPMDeviation * 100.0
-        )
-    }
-    
-    // 🔧 NEW: Global alignment-based accuracy calculation (fixes cascading error issue)
-    private func calculateSmartAccuracyDetailed(userInput: String, targetText: String) -> SmartAccuracyMetrics {
-        // Handle empty input
-        guard !userInput.isEmpty else { 
-            return SmartAccuracyMetrics(word: 100.0, character: 100.0, hybrid: 100.0)
-        }
-        
-        // 🎯 ROBUST IMPLEMENTATION: Global alignment approach
-        let normalizedInput = normalizeText(userInput, mode: .flexible)
-        let normalizedTarget = normalizeText(targetText, mode: .flexible)
-        
-        // Phase 1: Word-level LCS anchoring to prevent cascading errors
-        let inputWords = tokenizeWords(normalizedInput)
-        let targetWords = tokenizeWords(normalizedTarget)
-        let wordAnchors = findWordAnchors(inputWords: inputWords, targetWords: targetWords)
-        
-        // Phase 2: Character-level alignment within anchor segments
-        let alignmentResult = performGlobalAlignment(
-            userInput: normalizedInput, 
-            targetText: normalizedTarget,
-            wordAnchors: wordAnchors
-        )
-        
-        // Calculate accuracies based on global alignment
-        let wordAccuracy = calculateWordAlignmentAccuracy(alignmentResult: alignmentResult, inputWords: inputWords, targetWords: targetWords)
-        let charAccuracy = calculateCharacterAlignmentAccuracy(alignmentResult: alignmentResult)
-        
-        // Hybrid approach: combine word and character accuracy with global alignment weights
-        let hybridAccuracy = (wordAccuracy * 0.65) + (charAccuracy * 0.35)
-        
-        #if DEBUG
-        print("🎯 Global Alignment Debug:")
-        print("   Word anchors: \(wordAnchors.count), Input words: \(inputWords.count), Target words: \(targetWords.count)")
-        print("   Alignment ops: \(alignmentResult.operations.count), Error blocks: \(alignmentResult.errorBlocks.count)")
-        print("   Word accuracy: \(String(format: "%.1f", wordAccuracy))% (weight: 65%)")
-        print("   Character accuracy: \(String(format: "%.1f", charAccuracy))% (weight: 35%)")
-        print("   Hybrid accuracy: \(String(format: "%.1f", hybridAccuracy))%")
-        #endif
-        
-        return SmartAccuracyMetrics(word: wordAccuracy, character: charAccuracy, hybrid: hybridAccuracy)
-    }
-    
-    // Legacy wrapper for compatibility
-    private func calculateSmartAccuracy(userInput: String, targetText: String) -> Double {
-        return calculateSmartAccuracyDetailed(userInput: userInput, targetText: targetText).hybrid
-    }
-    
-    // Calculate word-level accuracy (exact word matches)
-    private func calculateWordAccuracy(inputWords: [String], targetWords: [String]) -> Double {
-        guard !targetWords.isEmpty else { return 100.0 }
-        
-        let comparisonCount = min(inputWords.count, targetWords.count)
-        guard comparisonCount > 0 else { return 0.0 }
-        
-        var correctWords = 0
-        for i in 0..<comparisonCount {
-            if inputWords[i] == targetWords[i] {
-                correctWords += 1
-            }
-        }
-        
-        // Consider length mismatch as penalty
-        let lengthPenalty = abs(inputWords.count - targetWords.count)
-        let totalWords = max(inputWords.count, targetWords.count)
-        
-        let accuracy = Double(correctWords) / Double(totalWords) * 100.0
-        
-        #if DEBUG
-        print("   Word comparison: \(correctWords)/\(comparisonCount) matches, penalty: \(lengthPenalty)")
-        #endif
-        
-        return max(0.0, accuracy)
-    }
-    
-    // Calculate accuracy using Levenshtein distance (edit distance)
-    private func calculateEditDistanceAccuracy(userInput: String, targetText: String) -> Double {
-        let distance = levenshteinDistance(userInput, targetText)
-        let maxLength = max(userInput.count, targetText.count)
-        
-        guard maxLength > 0 else { return 100.0 }
-        
-        // Convert edit distance to accuracy percentage
-        let accuracy = (1.0 - Double(distance) / Double(maxLength)) * 100.0
-        return max(0.0, accuracy)
-    }
-    
-    // 🔧 CRASH FIX: Safe Levenshtein distance algorithm with bounds checking
-    private func levenshteinDistance(_ s1: String, _ s2: String) -> Int {
-        // Handle empty strings early to prevent crashes
-        if s1.isEmpty { return s2.count }
-        if s2.isEmpty { return s1.count }
-        
-        let s1Array = Array(s1)
-        let s2Array = Array(s2)
-        let s1Count = s1Array.count
-        let s2Count = s2Array.count
-        
-        // Safety check for very large strings to prevent memory issues
-        guard s1Count <= 10000 && s2Count <= 10000 else {
-            print("⚠️ Warning: String too long for Levenshtein calculation, using approximation")
-            return max(s1Count, s2Count) // Worst-case approximation
-        }
-        
-        // 🔧 CRASH FIX: Create matrix with extra safety checks
-        guard s1Count >= 0 && s2Count >= 0 else {
-            print("⚠️ Negative string counts: s1Count=\(s1Count), s2Count=\(s2Count)")
-            return max(s1.count, s2.count)
-        }
-        
-        var matrix = Array(repeating: Array(repeating: 0, count: s2Count + 1), count: s1Count + 1)
-        
-        // Initialize first row and column with bounds checking
-        for i in 0...s1Count {
-            if i < matrix.count {
-                matrix[i][0] = i
-            }
-        }
-        for j in 0...s2Count {
-            if matrix.count > 0 && j < matrix[0].count {
-                matrix[0][j] = j
-            }
-        }
-        
-        // Fill the matrix with bounds checking
-        for i in 1...s1Count {
-            for j in 1...s2Count {
-                // Bounds checking for array access
-                guard i < matrix.count && j < matrix[i].count && 
-                      i-1 < s1Array.count && j-1 < s2Array.count else {
-                    continue
-                }
-                
-                let cost = s1Array[i-1] == s2Array[j-1] ? 0 : 1
-                matrix[i][j] = min(
-                    matrix[i-1][j] + 1,    // deletion
-                    matrix[i][j-1] + 1,    // insertion
-                    matrix[i-1][j-1] + cost // substitution
-                )
-            }
-        }
-        
-        // 🔧 CRASH FIX: Ultra-safe matrix access with comprehensive bounds checking
-        guard matrix.count > 0 && !matrix.isEmpty else {
-            print("⚠️ Empty matrix error")
-            return max(s1Count, s2Count)
-        }
-        
-        guard matrix[0].count > 0 else {
-            print("⚠️ Empty matrix row error")
-            return max(s1Count, s2Count)
-        }
-        
-        // 🔧 Additional validation: ensure counts match array lengths
-        guard s1Count == s1Array.count && s2Count == s2Array.count else {
-            print("⚠️ Count mismatch: s1Count=\(s1Count) vs s1Array.count=\(s1Array.count), s2Count=\(s2Count) vs s2Array.count=\(s2Array.count)")
-            return abs(s1Array.count - s2Array.count) // Return difference as approximation
-        }
-        
-        guard s1Count >= 0 && s2Count >= 0 && 
-              s1Count < matrix.count && s2Count < matrix[0].count else {
-            print("⚠️ Matrix bounds error: s1Count=\(s1Count), s2Count=\(s2Count), matrix=\(matrix.count)x\(matrix[0].count)")
-            print("   s1='\(s1.prefix(20))' s2='\(s2.prefix(20))'")
-            return max(s1Count, s2Count) // Fallback to maximum possible distance
-        }
-        
-        return matrix[s1Count][s2Count]
-    }
-    
-    // Legacy function for compatibility (now calls smart accuracy)
-    private func calculateCharacterAccuracy(userInput: String, targetText: String) -> Double {
-        #if DEBUG
-        print("⚠️ Using legacy calculateCharacterAccuracy - consider updating to calculateSmartAccuracy")
-        #endif
-        return calculateSmartAccuracy(userInput: userInput, targetText: targetText)
-    }
-    
-    // 🔧 ENHANCED: Configurable text normalization for comparison
-    private func normalizeText(_ text: String, mode: NormalizationMode = .strict) -> String {
-        var normalized = text
-            // Line ending normalization
-            .replacingOccurrences(of: "\r\n", with: "\n")  // Windows line endings
-            .replacingOccurrences(of: "\r", with: "\n")    // Mac classic line endings
-            // Space normalization
-            .replacingOccurrences(of: "\t", with: " ")     // Tab to space
-            .replacingOccurrences(of: "\u{00A0}", with: " ") // Non-breaking space to space
-            .replacingOccurrences(of: "\u{3000}", with: " ") // Ideographic space to space
-            // Unicode normalization (decomposed → composed form)
-            .precomposedStringWithCanonicalMapping
-        
-        switch mode {
-        case .strict:
-            // IELTS strict mode - preserve exact spacing and punctuation
-            normalized = normalized
-                // Remove only control characters except newlines and spaces
-                .filter { char in
-                    let unicodeScalar = char.unicodeScalars.first
-                    let isControlChar = unicodeScalar?.properties.generalCategory == .control
-                    return !isControlChar || char.isNewline || char.isWhitespace
-                }
-        case .flexible:
-            // Flexible mode - normalize multiple spaces and convert newlines
-            normalized = normalized
-                // Collapse multiple spaces
-                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-                // Convert newlines to spaces for more flexible comparison
-                .replacingOccurrences(of: "\n", with: " ")
-                // Remove control characters
-                .filter { char in
-                    let unicodeScalar = char.unicodeScalars.first
-                    let isControlChar = unicodeScalar?.properties.generalCategory == .control
-                    return !isControlChar
-                }
-        }
-        
-        return normalized.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    
-    // Helper function to categorize error types for debugging
-    private func getErrorType(input: Character, target: Character) -> String {
-        let inputUnicode = input.unicodeScalars.first?.value ?? 0
-        let targetUnicode = target.unicodeScalars.first?.value ?? 0
-        
-        if input.isWhitespace && target.isWhitespace {
-            return "whitespace_mismatch"
-        } else if input.isWhitespace || target.isWhitespace {
-            return "whitespace_vs_char"
-        } else if input.isNewline || target.isNewline {
-            return "newline_mismatch"
-        } else if input.lowercased() == target.lowercased() {
-            return "case_difference"
-        } else if abs(Int(inputUnicode) - Int(targetUnicode)) < 10 {
-            return "similar_chars"
-        } else {
-            return "different_chars"
-        }
-    }
-    
-    private func tokenizeWords(_ text: String) -> [String] {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return [] }
-        return trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-    }
-    
-    // MARK: - Global Alignment Implementation
-    
-    /// 🔧 Phase 1: Find word-level anchors using LCS to prevent cascading errors
-    private func findWordAnchors(inputWords: [String], targetWords: [String]) -> [WordAnchor] {
-        var anchors: [WordAnchor] = []
-        
-        // Simple LCS-based word matching to establish anchor points
-        let lcs = longestCommonSubsequence(inputWords, targetWords)
-        
-        var inputIndex = 0
-        var targetIndex = 0
-        
-        for commonWord in lcs {
-            // Find next occurrence of common word in both sequences
-            while inputIndex < inputWords.count && inputWords[inputIndex] != commonWord {
-                inputIndex += 1
-            }
-            while targetIndex < targetWords.count && targetWords[targetIndex] != commonWord {
-                targetIndex += 1
-            }
+        do {
+            // Character-level alignment for accurate error tracking
+            let alignmentResult = try performAlignment(target: targetText, input: userInput)
             
-            if inputIndex < inputWords.count && targetIndex < targetWords.count {
-                anchors.append(WordAnchor(inputIndex: inputIndex, targetIndex: targetIndex, word: commonWord))
-                inputIndex += 1
-                targetIndex += 1
-            }
+            // Calculate basic metrics
+            let elapsedMinutes = max(0.01, elapsedTime / 60.0) // Prevent division by zero
+            let charsTyped = userInput.count
+            let charsInTarget = targetText.count
+            
+            // Calculate WPM using 5-char-per-word standard
+            let grossWPM = Double(charsTyped) / 5.0 / elapsedMinutes
+            
+            // Calculate accuracy from alignment result
+            let characterAccuracy = calculateCharacterAlignmentAccuracy(alignmentResult: alignmentResult)
+            let wordAccuracy = calculateWordAlignment(target: targetText, input: userInput)
+            
+            // Net WPM with accuracy penalty
+            let netWPM = grossWPM * (characterAccuracy / 100.0)
+            
+            // Calculate completion percentage
+            let completionPercentage = min(100.0, Double(charsTyped) / Double(charsInTarget) * 100.0)
+            
+            // Calculate KSPC (Keystrokes Per Character)
+            let kspc = charsTyped > 0 ? Double(totalKeystrokes) / Double(charsTyped) : 1.0
+            
+            // Calculate backspace rate
+            let backspaceRate = totalKeystrokes > 0 ? Double(backspaceCount) / Double(totalKeystrokes) * 100.0 : 0.0
+            
+            // Error analysis from alignment
+            let errorBreakdown = analyzeErrorsFromAlignment(alignmentResult)
+            let totalErrors = alignmentResult.errorCount
+            let errorRate = Double(totalErrors) / Double(charsTyped) * 100.0
+            
+            // 🔧 FORMULA VALIDATION: Net WPM = Gross WPM × Accuracy
+            let expectedNetWPM = grossWPM * characterAccuracy / 100.0
+            let formulaDeviation = abs(netWPM - expectedNetWPM) / max(netWPM, 0.01)
+            let isFormulaValid = formulaDeviation <= 0.03 // 3% tolerance
+            
+            // 🔧 UNFIXED ERRORS: Count unresolved differences
+            let unfixedErrors = calculateUnfixedErrors(target: targetText, input: userInput)
+            let unfixedErrorRate = Double(unfixedErrors) / Double(charsTyped) * 100.0
+            
+            // Phase A: Quality Score (0-100)
+            let qualityScore = calculateQualityScore(
+                accuracy: characterAccuracy,
+                consistency: 100.0 - min(100.0, backspaceRate),
+                completion: completionPercentage,
+                speed: min(100.0, netWPM / 60.0 * 100.0)
+            )
+            
+            // Hybrid accuracy (weighted combination)
+            let hybridAccuracy = (characterAccuracy * 0.7) + (wordAccuracy * 0.3)
+            
+            return ScoringResult(
+                grossWPM: grossWPM,
+                netWPM: netWPM,
+                accuracy: characterAccuracy,
+                qualityScore: qualityScore,
+                errorBreakdown: errorBreakdown,
+                matchedWords: calculateMatchedWords(target: targetText, input: userInput),
+                totalWords: targetText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count,
+                totalErrors: totalErrors,
+                errorRate: errorRate,
+                completionPercentage: completionPercentage,
+                kspc: kspc,
+                backspaceRate: backspaceRate,
+                totalKeystrokes: totalKeystrokes,
+                backspaceCount: backspaceCount,
+                unfixedErrors: unfixedErrors,
+                unfixedErrorRate: unfixedErrorRate,
+                wordAccuracy: wordAccuracy,
+                charAccuracy: characterAccuracy,
+                hybridAccuracy: hybridAccuracy,
+                isFormulaValid: isFormulaValid,
+                formulaDeviation: formulaDeviation
+            )
+            
+        } catch {
+            print("⚠️ Error in scoring calculation: \(error)")
+            return createDefaultScoringResult()
         }
-        
-        return anchors
     }
     
-    /// Longest Common Subsequence for word-level matching
-    private func longestCommonSubsequence(_ seq1: [String], _ seq2: [String]) -> [String] {
-        let m = seq1.count
-        let n = seq2.count
+    /// Calculate Quality Score (Phase A enhancement)
+    private func calculateQualityScore(accuracy: Double, consistency: Double, completion: Double, speed: Double) -> Double {
+        // Weighted quality score emphasizing accuracy and consistency
+        let weights: (accuracy: Double, consistency: Double, completion: Double, speed: Double) = (0.4, 0.3, 0.2, 0.1)
         
-        // DP table for LCS length
-        var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
+        return (accuracy * weights.accuracy) +
+               (consistency * weights.consistency) +
+               (completion * weights.completion) +
+               (speed * weights.speed)
+    }
+    
+    /// Safe alignment with error handling
+    private func performAlignment(target: String, input: String) throws -> AlignmentResult {
+        let operations = calculateAlignmentOperations(target: target, input: input)
+        let matchCount = operations.filter { $0.type == .match }.count
+        let errorCount = operations.filter { $0.type != .match }.count
+        let totalOps = operations.count
+        let accuracy = totalOps > 0 ? Double(matchCount) / Double(totalOps) * 100.0 : 100.0
+        
+        return AlignmentResult(
+            operations: operations,
+            accuracy: accuracy,
+            totalOperations: totalOps,
+            matchCount: matchCount,
+            errorCount: errorCount
+        )
+    }
+    
+    /// Calculate alignment operations using dynamic programming
+    private func calculateAlignmentOperations(target: String, input: String) -> [AlignmentOperation] {
+        let targetChars = Array(target)
+        let inputChars = Array(input)
+        let targetLen = targetChars.count
+        let inputLen = inputChars.count
+        
+        // DP table for edit distance with operation tracking
+        var dp = Array(repeating: Array(repeating: Int.max, count: inputLen + 1), count: targetLen + 1)
+        var operations: [AlignmentOperation] = []
+        
+        // Initialize base cases
+        for i in 0...targetLen {
+            dp[i][0] = i
+        }
+        for j in 0...inputLen {
+            dp[0][j] = j
+        }
         
         // Fill DP table
-        for i in 1...m {
-            for j in 1...n {
-                if seq1[i-1] == seq2[j-1] {
-                    dp[i][j] = dp[i-1][j-1] + 1
+        for i in 1...targetLen {
+            for j in 1...inputLen {
+                if targetChars[i-1] == inputChars[j-1] {
+                    dp[i][j] = dp[i-1][j-1] // Match
                 } else {
-                    dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+                    dp[i][j] = 1 + min(
+                        dp[i-1][j],   // Deletion
+                        dp[i][j-1],   // Insertion
+                        dp[i-1][j-1]  // Substitution
+                    )
                 }
             }
         }
         
-        // Backtrack to get actual LCS
-        var lcs: [String] = []
-        var i = m, j = n
-        
-        while i > 0 && j > 0 {
-            if seq1[i-1] == seq2[j-1] {
-                lcs.insert(seq1[i-1], at: 0)
-                i -= 1
-                j -= 1
-            } else if dp[i-1][j] > dp[i][j-1] {
-                i -= 1
-            } else {
-                j -= 1
-            }
-        }
-        
-        return lcs
-    }
-    
-    /// 🔧 Phase 2: Perform global alignment with Needleman-Wunsch on character segments
-    private func performGlobalAlignment(userInput: String, targetText: String, wordAnchors: [WordAnchor]) -> AlignmentResult {
-        let inputChars = Array(userInput)
-        let targetChars = Array(targetText)
-        
-        // Perform Needleman-Wunsch alignment between anchor points
-        let operations = needlemanWunschAlignment(inputChars, targetChars)
-        
-        // Group operations into error blocks
-        let errorBlocks = groupIntoErrorBlocks(operations)
-        
-        // Count unfixed errors (substitutions + insertions + deletions)
-        let unfixedErrors = operations.filter { $0.type != .match }.count
-        
-        return AlignmentResult(operations: operations, errorBlocks: errorBlocks, unfixedErrors: unfixedErrors)
-    }
-    
-    /// Needleman-Wunsch global alignment algorithm (simplified with cost=1 for all operations)
-    private func needlemanWunschAlignment(_ seq1: [Character], _ seq2: [Character]) -> [AlignmentOperation] {
-        let m = seq1.count
-        let n = seq2.count
-        
-        // Initialize scoring matrix
-        var score = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
-        
-        // Initialize first row and column (gap penalties)
-        for i in 0...m {
-            score[i][0] = -i  // Gap penalty = 1
-        }
-        for j in 0...n {
-            score[0][j] = -j  // Gap penalty = 1
-        }
-        
-        // Fill scoring matrix
-        for i in 1...m {
-            for j in 1...n {
-                let matchScore = score[i-1][j-1] + (seq1[i-1] == seq2[j-1] ? 2 : -1) // Match = +2, Mismatch = -1
-                let deleteScore = score[i-1][j] - 1  // Deletion penalty = 1
-                let insertScore = score[i][j-1] - 1  // Insertion penalty = 1
-                
-                score[i][j] = max(matchScore, max(deleteScore, insertScore))
-            }
-        }
-        
-        // Backtrack to get alignment
-        var operations: [AlignmentOperation] = []
-        var i = m, j = n
-        var position = 0
+        // Backtrack to reconstruct operations
+        var i = targetLen
+        var j = inputLen
         
         while i > 0 || j > 0 {
-            if i > 0 && j > 0 && score[i][j] == score[i-1][j-1] + (seq1[i-1] == seq2[j-1] ? 2 : -1) {
-                // Match or substitution
-                let opType: AlignmentOperation.OperationType = seq1[i-1] == seq2[j-1] ? .match : .substitute
-                operations.insert(AlignmentOperation(type: opType, inputChar: seq1[i-1], targetChar: seq2[j-1], position: position), at: 0)
+            if i > 0 && j > 0 && targetChars[i-1] == inputChars[j-1] {
+                operations.append(AlignmentOperation(
+                    type: .match,
+                    targetPos: i-1,
+                    inputPos: j-1,
+                    targetChar: targetChars[i-1],
+                    inputChar: inputChars[j-1]
+                ))
                 i -= 1
                 j -= 1
-            } else if i > 0 && score[i][j] == score[i-1][j] - 1 {
-                // Deletion (missing in input)
-                operations.insert(AlignmentOperation(type: .delete, inputChar: nil, targetChar: seq2[j-1], position: position), at: 0)
+            } else if i > 0 && j > 0 && dp[i][j] == dp[i-1][j-1] + 1 {
+                operations.append(AlignmentOperation(
+                    type: .substitute,
+                    targetPos: i-1,
+                    inputPos: j-1,
+                    targetChar: targetChars[i-1],
+                    inputChar: inputChars[j-1]
+                ))
                 i -= 1
+                j -= 1
+            } else if i > 0 && dp[i][j] == dp[i-1][j] + 1 {
+                operations.append(AlignmentOperation(
+                    type: .delete,
+                    targetPos: i-1,
+                    inputPos: -1,
+                    targetChar: targetChars[i-1],
+                    inputChar: nil
+                ))
+                i -= 1
+            } else if j > 0 && dp[i][j] == dp[i][j-1] + 1 {
+                operations.append(AlignmentOperation(
+                    type: .insert,
+                    targetPos: -1,
+                    inputPos: j-1,
+                    targetChar: nil,
+                    inputChar: inputChars[j-1]
+                ))
+                j -= 1
             } else {
-                // Insertion (extra in input)
-                operations.insert(AlignmentOperation(type: .insert, inputChar: seq1[i-1], targetChar: nil, position: position), at: 0)
-                j -= 1
+                // Safety fallback
+                break
             }
-            position += 1
         }
         
-        return operations
+        return operations.reversed() // Reverse to get correct order
     }
     
-    /// Group consecutive error operations into error blocks for UI display
-    private func groupIntoErrorBlocks(_ operations: [AlignmentOperation]) -> [ErrorBlock] {
-        var blocks: [ErrorBlock] = []
-        var currentBlock: [AlignmentOperation] = []
+    /// Analyze errors from alignment operations
+    private func analyzeErrorsFromAlignment(_ alignmentResult: AlignmentResult) -> [String: Int] {
+        var errorBreakdown: [String: Int] = [:]
         
-        for operation in operations {
-            if operation.type == .match {
-                // End current error block if it exists
-                if !currentBlock.isEmpty {
-                    blocks.append(createErrorBlock(from: currentBlock))
-                    currentBlock.removeAll()
+        for operation in alignmentResult.operations {
+            switch operation.type {
+            case .substitute:
+                if let target = operation.targetChar, let input = operation.inputChar {
+                    let errorKey = "substitute_\(target)_to_\(input)"
+                    errorBreakdown[errorKey, default: 0] += 1
                 }
-            } else {
-                // Add to current error block
-                currentBlock.append(operation)
+            case .insert:
+                if let input = operation.inputChar {
+                    let errorKey = "insert_\(input)"
+                    errorBreakdown[errorKey, default: 0] += 1
+                }
+            case .delete:
+                if let target = operation.targetChar {
+                    let errorKey = "delete_\(target)"
+                    errorBreakdown[errorKey, default: 0] += 1
+                }
+            case .match:
+                break // No error
             }
         }
         
-        // Handle final block
-        if !currentBlock.isEmpty {
-            blocks.append(createErrorBlock(from: currentBlock))
-        }
-        
-        return blocks
+        return errorBreakdown
     }
     
-    private func createErrorBlock(from operations: [AlignmentOperation]) -> ErrorBlock {
-        guard let firstOp = operations.first else {
-            return ErrorBlock(startPosition: 0, length: 0, operations: 0, type: .mixed)
+    /// Calculate unfixed errors (permanent differences)
+    private func calculateUnfixedErrors(target: String, input: String) -> Int {
+        // Simple Levenshtein distance for unfixed errors
+        return levenshteinDistance(target, input)
+    }
+    
+    /// Levenshtein distance calculation
+    private func levenshteinDistance(_ s1: String, _ s2: String) -> Int {
+        let a = Array(s1)
+        let b = Array(s2)
+        
+        var dist = Array(repeating: Array(repeating: 0, count: b.count + 1), count: a.count + 1)
+        
+        for i in 1...a.count {
+            dist[i][0] = i
         }
         
-        let types = Set(operations.map { $0.type })
-        let blockType: ErrorBlock.ErrorBlockType
+        for j in 1...b.count {
+            dist[0][j] = j
+        }
         
-        if types.count == 1 {
-            switch types.first! {
-            case .substitute: blockType = .substitution
-            case .insert: blockType = .insertion
-            case .delete: blockType = .deletion
-            case .match: blockType = .mixed // Shouldn't happen
+        for i in 1...a.count {
+            for j in 1...b.count {
+                if a[i-1] == b[j-1] {
+                    dist[i][j] = dist[i-1][j-1]
+                } else {
+                    dist[i][j] = Swift.min(
+                        dist[i-1][j] + 1,
+                        dist[i][j-1] + 1,
+                        dist[i-1][j-1] + 1
+                    )
+                }
             }
-        } else {
-            blockType = .mixed
         }
         
-        return ErrorBlock(
-            startPosition: firstOp.position,
-            length: operations.count,
-            operations: operations.count,
-            type: blockType
-        )
+        return dist[a.count][b.count]
     }
     
-    /// Calculate word-level accuracy from alignment result
-    private func calculateWordAlignmentAccuracy(alignmentResult: AlignmentResult, inputWords: [String], targetWords: [String]) -> Double {
-        // Simple word-level accuracy: correctly typed words / total target words
-        let totalTargetWords = targetWords.count
-        guard totalTargetWords > 0 else { return 100.0 }
+    /// Calculate word-level accuracy
+    private func calculateWordAlignment(target: String, input: String) -> Double {
+        let targetWords = target.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        let inputWords = input.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
         
-        // Count error blocks that affect whole words (rough approximation)
-        let majorErrorBlocks = alignmentResult.errorBlocks.filter { $0.length > 3 }
-        let minorErrorBlocks = alignmentResult.errorBlocks.filter { $0.length <= 3 }
+        guard !targetWords.isEmpty else { return 100.0 }
         
-        let estimatedAffectedWords = majorErrorBlocks.count + (minorErrorBlocks.count / 2)
-        let correctWords = max(0, totalTargetWords - estimatedAffectedWords)
+        let maxWords = max(targetWords.count, inputWords.count)
+        guard maxWords > 0 else { return 100.0 }
         
-        return Double(correctWords) / Double(totalTargetWords) * 100.0
+        var matches = 0
+        let minWords = min(targetWords.count, inputWords.count)
+        
+        for i in 0..<minWords {
+            if targetWords[i] == inputWords[i] {
+                matches += 1
+            }
+        }
+        
+        return Double(matches) / Double(maxWords) * 100.0
+    }
+    
+    /// Calculate matched words count
+    private func calculateMatchedWords(target: String, input: String) -> Int {
+        let targetWords = target.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        let inputWords = input.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        
+        let minWords = min(targetWords.count, inputWords.count)
+        var matches = 0
+        
+        for i in 0..<minWords {
+            if targetWords[i] == inputWords[i] {
+                matches += 1
+            }
+        }
+        
+        return matches
     }
     
     /// Calculate character-level accuracy from alignment result
@@ -769,100 +485,6 @@ class BasicScoringEngine {
         
         let correctOperations = alignmentResult.operations.filter { $0.type == .match }.count
         return Double(correctOperations) / Double(totalOperations) * 100.0
-    }
-    
-    // MARK: - Telemetry & Validation
-    
-    /// 🚨 JSON TELEMETRY: Log detailed typing metrics for validation and debugging
-    private func logTelemetryData(
-        mode: String,
-        sourceId: String,
-        charsRef: Int,
-        charsTyped: Int,
-        keystrokesTotal: Int,
-        backspaceCount: Int,
-        unfixedErrors: Int,
-        durationSec: Double,
-        grossWPM: Double,
-        netWPM: Double,
-        accuracy: Double,
-        kspc: Double,
-        isFormulaValid: Bool,
-        netWPMDeviation: Double,
-        kspcDeviation: Double
-    ) {
-        let telemetryData: [String: Any] = [
-            "timestamp": ISO8601DateFormatter().string(from: Date()),
-            "mode": mode,
-            "source_id": sourceId,
-            "chars_ref": charsRef,
-            "chars_typed": charsTyped,
-            "keystrokes_total": keystrokesTotal,
-            "backspace_count": backspaceCount,
-            "unfixed_errors": unfixedErrors,
-            "duration_sec": String(format: "%.3f", durationSec),
-            "gross_wpm": String(format: "%.2f", grossWPM),
-            "net_wpm": String(format: "%.2f", netWPM),
-            "accuracy_pct": String(format: "%.2f", accuracy),
-            "kspc": String(format: "%.3f", kspc),
-            "app_version": "1.0",
-            "formula_valid": isFormulaValid,
-            "net_wpm_deviation": String(format: "%.4f", netWPMDeviation),
-            "kspc_deviation": String(format: "%.4f", kspcDeviation),
-            "sanity_check": [
-                "net_wpm_formula": isFormulaValid ? "PASS" : "FAIL",
-                "kspc_formula": kspcDeviation <= 0.03 ? "PASS" : "FAIL"
-            ]
-        ]
-        
-        // Convert to JSON
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: telemetryData, options: .prettyPrinted)
-            if let jsonString = String(data: jsonData, encoding: .utf8) {
-                print("🔧 TELEMETRY JSON:")
-                print(jsonString)
-                
-                // TODO: Optional file logging to ~/Documents/WordflowTelemetry/
-                #if DEBUG
-                writeToTelemetryFile(jsonString)
-                #endif
-            }
-        } catch {
-            print("⚠️ Failed to serialize telemetry data: \(error)")
-        }
-    }
-    
-    /// Write telemetry data to file for debugging
-    private func writeToTelemetryFile(_ jsonString: String) {
-        let fileManager = FileManager.default
-        
-        // Get Documents directory
-        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            print("⚠️ Could not access Documents directory")
-            return
-        }
-        
-        // Create WordflowTelemetry directory
-        let telemetryURL = documentsURL.appendingPathComponent("WordflowTelemetry")
-        
-        do {
-            if !fileManager.fileExists(atPath: telemetryURL.path) {
-                try fileManager.createDirectory(at: telemetryURL, withIntermediateDirectories: true)
-            }
-            
-            // Create filename with timestamp
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
-            let filename = "typing_metrics_\(formatter.string(from: Date())).json"
-            let fileURL = telemetryURL.appendingPathComponent(filename)
-            
-            // Write JSON to file
-            try jsonString.write(to: fileURL, atomically: true, encoding: .utf8)
-            print("📁 Telemetry logged to: \(fileURL.path)")
-            
-        } catch {
-            print("⚠️ Failed to write telemetry file: \(error)")
-        }
     }
 }
 
@@ -918,226 +540,65 @@ final class TypingTestManager {
     private var personalBests: [TimerMode: PersonalBest] = [:]
     
     // Current session comparison
-    private(set) var isPersonalBest: Bool = false
+    private(set) var isPersonalBest = false
     
-    // Time Attack Mode Properties
-    private(set) var isTimeAttackMode: Bool = false
-    private(set) var correctionCost: Int = 0
-    private(set) var totalKeystrokes: Int = 0  // Total keystroke count
-    var isTrackingKeyPresses: Bool = false
-    var timeAttackStartTime: CFAbsoluteTime = 0.0
-    var isTimeAttackCompleted: Bool = false
+    // Test session data
+    private var timer: Timer?
+    private var sessionStartTime: Date?
+    var currentTask: IELTSTask?
+    var userInput: String = ""
+    private var keyHistory: [Date] = [] // For consistency tracking
+    
+    // Keystroke tracking
+    private(set) var totalKeystrokes: Int = 0
+    private(set) var correctionCost: Int = 0 // Backspaces count
+    
+    // Callbacks
+    var onTimeUp: (() -> Void)?
     var onTimeAttackCompleted: ((TimeAttackResult) -> Void)?
     
-    // Backward compatibility
-    var currentWPM: Double { netWPM }  // Main display uses Net WPM
-    var accuracy: Double { characterAccuracy }  // Main display uses character accuracy
-    
-    // Current session
-    private(set) var currentTask: IELTSTask?
-    private(set) var userInput: String = ""
-    private var timer: Timer?
-    
-    // Time up completion handler
-    var onTimeUp: (() -> Void)?
-    
-    // Configuration (Phase A: 100ms updates as per requirements)
-    private var timeLimit: TimeInterval { timerMode.duration }
-    let updateInterval: TimeInterval = 0.1 // 100ms as per Phase A requirements
+    // MARK: - Initialization
     
     init() {
         loadPersonalBests()
     }
     
+    // MARK: - Timer Mode Management (Phase A)
+    
     func setTimerMode(_ mode: TimerMode) {
-        guard !isActive else { return } // Don't change mode during active test
+        guard !isActive else { return }
         timerMode = mode
-        remainingTime = timeLimit
+        remainingTime = mode.duration
     }
     
-    // Phase A: Custom practice mode duration setter
-    func setPracticeModeDuration(_ duration: TimeInterval) {
-        guard !isActive else { return }
-        timerMode = .practice(duration)
-        remainingTime = timeLimit
-    }
+    // MARK: - TimeAttack Properties (restored from original design)
+    
+    private(set) var isTimeAttackMode: Bool = false
+    var timeAttackStartTime: CFAbsoluteTime = 0
+    var isTimeAttackCompleted: Bool = false
+    var isTrackingKeyPresses: Bool = false
+    var timeAttackWpmHistory: [Double] = []
+    var timeAttackWpmVariation: Double = 0
+    
+    // MARK: - Test Control
     
     func startTest(with task: IELTSTask) {
+        guard !isActive else { return }
+        
         currentTask = task
+        userInput = ""
         isActive = true
         isPaused = false
-        remainingTime = timeLimit
         elapsedTime = 0
-        userInput = ""
-        resetMetrics()
+        remainingTime = timerMode.duration
+        totalKeystrokes = 0
+        correctionCost = 0
+        isPersonalBest = false
+        wpmHistory.removeAll()
+        keyHistory.removeAll()
+        sessionStartTime = Date()
         
-        task.markAsUsed()
-        startTimer()
-    }
-    
-    func updateInput(_ input: String) {
-        guard isActive && !isPaused else { return }
-        
-        userInput = input
-        calculateMetrics()
-    }
-    
-    func pauseTest() {
-        guard isActive && !isPaused else { return }
-        isPaused = true
-        timer?.invalidate()
-    }
-    
-    func resumeTest() {
-        guard isActive && isPaused else { return }
-        isPaused = false
-        startTimer()
-    }
-    
-    func endTest() -> TypingResult? {
-        guard let task = currentTask else { return nil }
-        
-        isActive = false
-        isPaused = false
-        timer?.invalidate()
-        
-        calculateFinalMetrics()
-        
-        // Phase A: Use enhanced initializer with scoring result
-        let result = TypingResult(
-            task: task,
-            userInput: userInput,
-            duration: elapsedTime,
-            scoringResult: currentScore,
-            timerMode: timerMode
-        )
-        
-        reset()
-        return result
-    }
-    
-    private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: true) { _ in
-            Task { @MainActor in
-                self.updateTimer()
-            }
-        }
-    }
-    
-    private func updateTimer() {
-        guard isActive && !isPaused else { return }
-        
-        elapsedTime += updateInterval
-        remainingTime = max(0, timeLimit - elapsedTime)
-        
-        calculateMetrics()
-        
-        if remainingTime <= 0 {
-            onTimeUp?()
-        }
-    }
-    
-    // Phase A: Legacy methods removed - now handled by ScoringEngine
-    
-    private func calculateMetrics() {
-        guard let task = currentTask else { return }
-        
-        // Phase A: Use new scoring engine
-        currentScore = scoringEngine.calculateScore(
-            userInput: userInput,
-            targetText: task.modelAnswer,
-            elapsedTime: elapsedTime,
-            keystrokes: totalKeystrokes,
-            backspaceCount: correctionCost
-        )
-        
-        // Track WPM history for consistency calculation (using new netWPM)
-        wpmHistory.append(currentScore.netWPM)
-        if wpmHistory.count > 10 { // Keep last 10 measurements
-            wpmHistory.removeFirst()
-        }
-        
-        // Calculate WPM variation (consistency metric)
-        if wpmHistory.count >= 3 {
-            wpmVariation = calculateWPMVariation()
-        }
-    }
-    
-    private func calculateWPMVariation() -> Double {
-        guard wpmHistory.count >= 3 else { return 0 }
-        
-        let mean = wpmHistory.reduce(0, +) / Double(wpmHistory.count)
-        if mean == 0 { return 0 }
-        
-        let variance = wpmHistory.reduce(0) { sum, wpm in
-            sum + pow(wpm - mean, 2)
-        } / Double(wpmHistory.count)
-        
-        let standardDeviation = sqrt(variance)
-        return (standardDeviation / mean) * 100  // Coefficient of variation as percentage
-    }
-    
-    private func calculateFinalMetrics() {
-        calculateMetrics()
-        checkAndUpdatePersonalBest()
-    }
-    
-    private func checkAndUpdatePersonalBest() {
-        let currentNetWPM = currentScore.netWPM
-        let currentAccuracy = currentScore.accuracy
-        
-        // Only consider as personal best if accuracy is above 90%
-        guard currentAccuracy >= 90 else {
-            isPersonalBest = false
-            return
-        }
-        
-        // Phase A: Use timer mode ID for key (to handle practice modes with different durations)
-        let _ = timerMode.id // For future enhancement
-        
-        if let existingBest = personalBests[timerMode] {
-            if currentNetWPM > existingBest.netWPM {
-                personalBests[timerMode] = PersonalBest(netWPM: currentNetWPM, accuracy: currentAccuracy)
-                isPersonalBest = true
-                savePersonalBests()
-            } else {
-                isPersonalBest = false
-            }
-        } else {
-            personalBests[timerMode] = PersonalBest(netWPM: currentNetWPM, accuracy: currentAccuracy)
-            isPersonalBest = true
-            savePersonalBests()
-        }
-    }
-    
-    func getPersonalBest(for mode: TimerMode) -> PersonalBest? {
-        return personalBests[mode]
-    }
-    
-    // UserDefaults persistence (Phase A: Updated for new timer modes)
-    private func savePersonalBests() {
-        let encoder = JSONEncoder()
-        for (mode, best) in personalBests {
-            let key = "PersonalBest_\(mode.id)" // Use timer mode ID
-            if let data = try? encoder.encode(best) {
-                UserDefaults.standard.set(data, forKey: key)
-            }
-        }
-    }
-    
-    private func loadPersonalBests() {
-        let decoder = JSONDecoder()
-        for mode in TimerMode.allCases {
-            let key = "PersonalBest_\(mode.id)" // Use timer mode ID
-            if let data = UserDefaults.standard.data(forKey: key),
-               let best = try? decoder.decode(PersonalBest.self, from: data) {
-                personalBests[mode] = best
-            }
-        }
-    }
-    
-    private func resetMetrics() {
-        // Phase A: Reset to default scoring result
+        // Reset current score
         currentScore = ScoringResult(
             grossWPM: 0, netWPM: 0, accuracy: 100, qualityScore: 0,
             errorBreakdown: [:], matchedWords: 0, totalWords: 0,
@@ -1147,53 +608,302 @@ final class TypingTestManager {
             wordAccuracy: 100.0, charAccuracy: 100.0, hybridAccuracy: 100.0,
             isFormulaValid: true, formulaDeviation: 0.0
         )
-        wpmHistory.removeAll()
-        wpmVariation = 0
+        
+        startTimer()
     }
     
-    private func reset() {
+    func pauseTest() {
+        guard isActive, !isPaused else { return }
+        isPaused = true
+        timer?.invalidate()
+        timer = nil
+    }
+    
+    func resumeTest() {
+        guard isActive, isPaused else { return }
+        isPaused = false
+        startTimer()
+    }
+    
+    func endTest() -> TypingResult? {
+        guard isActive else { return nil }
+        
+        stopTimer()
+        
+        guard let task = currentTask else { return nil }
+        
+        let finalScore = currentScore
+        
+        let result = TypingResult(
+            task: task,
+            userInput: userInput,
+            duration: elapsedTime,
+            scoringResult: finalScore,
+            timerMode: timerMode
+        )
+        
+        // Check for personal best
+        checkAndUpdatePersonalBest(result: finalScore)
+        
+        // Log telemetry
+        logTelemetryData()
+        
+        reset()
+        
+        return result
+    }
+    
+    func reset() {
+        isActive = false
+        isPaused = false
         currentTask = nil
         userInput = ""
-        resetMetrics()
+        elapsedTime = 0
+        remainingTime = timerMode.duration
+        totalKeystrokes = 0
+        correctionCost = 0
+        isPersonalBest = false
+        wpmHistory.removeAll()
+        keyHistory.removeAll()
+        sessionStartTime = nil
     }
     
-    // MARK: - Time Attack Internal Methods
+    // MARK: - Timer Management
     
-    internal func setTimeAttackMode(_ value: Bool) {
-        isTimeAttackMode = value
+    private func startTimer() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateTimer()
+            }
+        }
     }
     
-    internal func setCorrectionCost(_ value: Int) {
-        correctionCost = value
+    func stopTimer() {
+        timer?.invalidate()
+        timer = nil
     }
     
-    internal func incrementCorrectionCost() {
+    private func updateTimer() {
+        guard isActive, !isPaused else { return }
+        
+        elapsedTime += 0.1
+        remainingTime = max(0, timerMode.duration - elapsedTime)
+        
+        // Update scoring in real-time
+        updateCurrentScore()
+        
+        // Track WPM history for consistency
+        if Int(elapsedTime * 10) % 20 == 0 { // Every 2 seconds
+            wpmHistory.append(currentScore.netWPM)
+            updateWPMVariation()
+        }
+        
+        if remainingTime <= 0 {
+            onTimeUp?()
+        }
+    }
+    
+    // MARK: - Input Management
+    
+    func updateInput(_ newInput: String) {
+        let previousLength = userInput.count
+        userInput = newInput
+        
+        // Track keystrokes
+        let newLength = newInput.count
+        if newLength > previousLength {
+            totalKeystrokes += (newLength - previousLength)
+            keyHistory.append(Date())
+        } else if newLength < previousLength {
+            correctionCost += (previousLength - newLength)
+            totalKeystrokes += (previousLength - newLength) // Backspaces count as keystrokes
+        }
+        
+        updateCurrentScore()
+    }
+    
+    private func updateCurrentScore() {
+        guard let task = currentTask, !userInput.isEmpty, elapsedTime > 0 else { return }
+        
+        currentScore = scoringEngine.calculateScore(
+            targetText: task.modelAnswer,
+            userInput: userInput,
+            elapsedTime: elapsedTime,
+            totalKeystrokes: totalKeystrokes,
+            backspaceCount: correctionCost
+        )
+    }
+    
+    // MARK: - Personal Best Management
+    
+    private func checkAndUpdatePersonalBest(result: ScoringResult) {
+        let currentBest = personalBests[timerMode]
+        
+        if currentBest == nil || result.netWPM > currentBest!.netWPM {
+            let newBest = PersonalBest(netWPM: result.netWPM, accuracy: result.accuracy)
+            personalBests[timerMode] = newBest
+            isPersonalBest = true
+            savePersonalBests()
+        }
+    }
+    
+    func getPersonalBest(for mode: TimerMode) -> PersonalBest? {
+        return personalBests[mode]
+    }
+    
+    private func loadPersonalBests() {
+        if let data = UserDefaults.standard.data(forKey: "PersonalBests"),
+           let decoded = try? JSONDecoder().decode([String: PersonalBest].self, from: data) {
+            // Convert string keys back to TimerMode
+            for (key, value) in decoded {
+                if let mode = TimerMode.allCases.first(where: { $0.id == key }) {
+                    personalBests[mode] = value
+                }
+            }
+        }
+    }
+    
+    private func savePersonalBests() {
+        // Convert TimerMode keys to strings for JSON serialization
+        let stringKeyedBests = Dictionary(uniqueKeysWithValues: personalBests.map { ($0.key.id, $0.value) })
+        
+        if let encoded = try? JSONEncoder().encode(stringKeyedBests) {
+            UserDefaults.standard.set(encoded, forKey: "PersonalBests")
+        }
+    }
+    
+    // MARK: - Performance Tracking
+    
+    private func updateWPMVariation() {
+        guard wpmHistory.count >= 2 else { return }
+        
+        let average = wpmHistory.reduce(0, +) / Double(wpmHistory.count)
+        let variance = wpmHistory.map { pow($0 - average, 2) }.reduce(0, +) / Double(wpmHistory.count)
+        let standardDeviation = sqrt(variance)
+        
+        wpmVariation = average > 0 ? (standardDeviation / average) * 100 : 0
+    }
+    
+    // MARK: - TimeAttack Control Methods (restored from original design)
+    
+    func setTimeAttackMode(_ enabled: Bool) {
+        isTimeAttackMode = enabled
+    }
+    
+    func setCorrectionCost(_ cost: Int) {
+        correctionCost = cost
+    }
+    
+    func setKeystrokeCount(_ count: Int) {
+        totalKeystrokes = count
+    }
+    
+    func incrementKeystrokeCount() {
+        totalKeystrokes += 1
+    }
+    
+    func incrementCorrectionCost() {
         correctionCost += 1
-        // Also count as keystroke
-        totalKeystrokes += 1
     }
     
-    internal func incrementKeystrokeCount() {
-        totalKeystrokes += 1
-    }
-    
-    internal func setKeystrokeCount(_ value: Int) {
-        totalKeystrokes = value
-    }
-    
-    internal func setUserInput(_ input: String) {
+    func setUserInput(_ input: String) {
         userInput = input
     }
     
-    internal func performCalculateMetrics() {
-        calculateMetrics()
+    func performCalculateMetrics() {
+        updateCurrentScore()
     }
     
-    internal var timeAttackWpmHistory: [Double] {
-        return wpmHistory
+    
+    // MARK: - Telemetry & Data Export
+    
+    private func logTelemetryData() {
+        // 🔧 SCHEMA v1.1: 完全準拠のtelemetry出力
+        guard let task = currentTask else { return }
+        
+        // 🔧 SANITY CHECKS: 保存前バリデーション（3つの必須検証）
+        let netFormula = currentScore.grossWPM * (currentScore.accuracy / 100.0)
+        let formulaDeviation = abs(currentScore.netWPM - netFormula) / max(currentScore.netWPM, 0.01)
+        let kspcExpected = Double(totalKeystrokes) / Double(userInput.count)
+        let kspcDeviation = abs(currentScore.kspc - kspcExpected) / max(currentScore.kspc, 0.01)
+        
+        let formulaValid = formulaDeviation <= 0.03
+        let kspcValid = kspcDeviation <= 0.03
+        let durationValid = elapsedTime >= 60.0  // 最低1分（正式は5分だが開発時は緩和）
+        
+        let allValid = formulaValid && kspcValid && durationValid
+        
+        if !allValid {
+            print("🚨 SANITY CHECK FAILED - 保存禁止:")
+            print("   Formula valid: \(formulaValid) (deviation: \(formulaDeviation))")
+            print("   KSPC valid: \(kspcValid) (deviation: \(kspcDeviation))")
+            print("   Duration valid: \(durationValid) (elapsed: \(elapsedTime)s)")
+            return // 保存禁止
+        }
+        
+        // 🔧 SCHEMA v1.1: 確定スキーマに準拠
+        let telemetryData: [String: Any] = [
+            "run_id": UUID().uuidString,
+            "ts": ISO8601DateFormatter().string(from: Date()),
+            "mode": isTimeAttackMode ? "no-delete" : "normal",  // 正規化
+            "experiment_mode": isTimeAttackMode ? "time_attack" : "standard",
+            "task_topic": task.topic,
+            "duration_sec": elapsedTime,
+            "chars_ref": task.modelAnswer.count,  // 必須保存
+            "chars_typed": userInput.count,
+            "unfixed_errors": currentScore.unfixedErrors,
+            "gross_wpm": currentScore.grossWPM,
+            "char_accuracy": currentScore.accuracy,  // 主指標
+            "net_wpm": currentScore.netWPM,
+            "keystrokes_total": totalKeystrokes,
+            "backspace_count": correctionCost,  // 必須フィールド
+            "kspc": currentScore.kspc,
+            "backspace_rate": currentScore.backspaceRate / 100.0,  // 割合に正規化
+            "formula_valid": formulaValid,
+            "formula_deviation": formulaDeviation,
+            "app_version": "1.1",  // バージョンアップ
+            "device_info": getDeviceInfo()
+        ]
+        
+        saveTelemetryToFile(telemetryData)
     }
     
-    internal var timeAttackWpmVariation: Double {
-        return wpmVariation
+    /// デバイス情報を取得
+    private func getDeviceInfo() -> String {
+        #if os(macOS)
+        let modelName = ProcessInfo.processInfo.machineHardwareName ?? "Unknown Mac"
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+        return "\(modelName) - \(osVersion)"
+        #else
+        return "Unknown Device"
+        #endif
+    }
+    
+    private func saveTelemetryToFile(_ data: [String: Any]) {
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: data, options: .prettyPrinted)
+            
+            let fileManager = FileManager.default
+            guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+            
+            let telemetryURL = documentsURL.appendingPathComponent("WordflowTelemetry")
+            
+            if !fileManager.fileExists(atPath: telemetryURL.path) {
+                try fileManager.createDirectory(at: telemetryURL, withIntermediateDirectories: true)
+            }
+            
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
+            let mode = isTimeAttackMode ? "no-delete" : "normal"
+            let filename = "wordflow_v1.1_\(mode)_\(formatter.string(from: Date())).json"
+            let fileURL = telemetryURL.appendingPathComponent(filename)
+            
+            try jsonData.write(to: fileURL)
+            print("📁 Basic telemetry saved: \(filename)")
+            
+        } catch {
+            print("⚠️ Failed to save telemetry: \(error)")
+        }
     }
 }
