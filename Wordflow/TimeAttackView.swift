@@ -540,60 +540,123 @@ struct TimeAttackView: View {
         HStack {
             // Start/Stop Controls
             HStack(spacing: 12) {
-                Button("Start Time Attack", systemImage: "play.fill") {
+                Button(action: {
                     startTimeAttack()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.fill")
+                        Text("Start Time Attack")
+                        Text("⌘S")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(4)
+                    }
                 }
                 .disabled(selectedTask == nil || timeAttackManager.isActive)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut("s", modifiers: .command)
                 
-                Button("Stop", systemImage: "stop.fill") {
+                Button(action: {
                     stopTimeAttack()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.fill")
+                        Text("Stop")
+                        Text("⌘.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(4)
+                    }
                 }
                 .disabled(!timeAttackManager.isActive)
                 .buttonStyle(.bordered)
                 .keyboardShortcut(".", modifiers: .command)
                 
-                Button("Retry", systemImage: "arrow.clockwise") {
+                Button(action: {
+                    forceCompleteTimeAttack()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("Finish")
+                        Text("⌘⏎")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(4)
+                    }
+                }
+                .disabled(!timeAttackManager.isActive || calculateProgress() < 90.0)
+                .buttonStyle(.bordered)
+                .keyboardShortcut(.return, modifiers: .command)
+                
+                Button(action: {
                     retryCurrentTask()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Retry")
+                        Text("⌘R")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(4)
+                    }
                 }
                 .disabled(!timeAttackManager.isActive && selectedTask == nil)
                 .buttonStyle(.bordered)
                 .keyboardShortcut("r", modifiers: .command)
             }
             
-            // Hidden buttons for additional shortcuts
+            // Hidden shortcuts for keyboard-only users
             Group {
                 Button("") { stopTimeAttack() }
                     .keyboardShortcut(.escape)
-                    .hidden()
-                    .disabled(!timeAttackManager.isActive)
-                
-                Button("") { forceCompleteTimeAttack() }
-                    .keyboardShortcut(.return, modifiers: .command)
                     .hidden()
                     .disabled(!timeAttackManager.isActive)
             }
             
             Spacer()
             
-            // Instructions with keyboard shortcuts
+            // Instructions with updated shortcuts
             VStack(alignment: .trailing, spacing: 4) {
                 if !timeAttackManager.isActive {
-                    Text("Select a task and press Start to begin your Time Attack!")
+                    Text("Select a task and start your Time Attack!")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text("⌘S: Start • ⌘R: Retry")
+                    Text("Use the buttons above or keyboard shortcuts")
                         .font(.caption)
                         .foregroundColor(.secondary.opacity(0.7))
                 } else {
                     Text("Type the target text as quickly and accurately as possible!")
                         .font(.subheadline)
                         .foregroundColor(.orange)
-                    Text("⌘.: Stop • ⌘⏎: Force Complete (90%+) • Esc: Abort")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        Text("Progress: \(Int(calculateProgress()))%")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if calculateProgress() >= 90.0 {
+                            Text("⌘⏎ to Finish!")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                                .fontWeight(.medium)
+                        } else {
+                            Text("Esc to Abort")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
             }
         }
